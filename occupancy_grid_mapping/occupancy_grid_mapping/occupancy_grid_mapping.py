@@ -12,6 +12,9 @@ import tf_transformations, tf2_ros, tf2_geometry_msgs
 from tf2_geometry_msgs.tf2_geometry_msgs import do_transform_pose
 from nav_msgs.msg import Odometry,OccupancyGrid
 from tf_transformations import euler_from_quaternion, quaternion_from_euler
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+from tf2_ros import TransformBroadcaster
+from geometry_msgs.msg import TransformStamped
 
 
 class grid_map(Node):
@@ -39,8 +42,13 @@ class grid_map(Node):
         map_rows = int(self.map_height / self.map_resolution)
         map_cols = int(self.map_width/ self.map_resolution)
         self.occupancy_grid_arr = self.l_prior * np.ones((map_rows, map_cols))
-
-
+        '''
+        qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10
+        )
+        '''
         #Declaring publishers and suscribers
         self.laser_scan_sub = self.create_subscription(LaserScan, "/scan", self.laser_callback, 10)
         self.curr_pose_sub = self.create_subscription(Odometry,"/odom",self.odom_callback,10)
@@ -49,7 +57,28 @@ class grid_map(Node):
 
         #TF_buffer
         self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)  
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+
+        """
+        # setting up tf2 broadcaster
+        self.tf_broadcaster = TransformBroadcaster(self)
+        
+        # broadcasting the transform 
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'odom'
+        t.child_frame_id = 'map'
+        t.transform.translation.x = 0.0
+        t.transform.translation.y = 0.0
+        t.transform.rotation.x = 0.0
+        t.transform.rotation.y = 0.0
+        t.transform.rotation.z = 0.0
+        t.transform.rotation.w = 1.0
+        self.tf_broadcaster.sendTransform(t)
+        """
+
+
+
 
     def cmd_vel_callback(self, msg):
         if(msg.linear.x==0):
@@ -177,6 +206,8 @@ class grid_map(Node):
 
         self.gridmap_int8 = (self.gridmap_p*100).astype(dtype=np.int8)
         self.gridmap_int8=self.gridmap_int8.tolist()
+
+
 
         # Publish map
         map_msg = OccupancyGrid()
