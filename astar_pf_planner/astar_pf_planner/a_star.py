@@ -12,6 +12,7 @@ from std_msgs.msg import Header
 import tf_transformations
 from std_msgs.msg import String
 import math
+from nav_msgs.msg import Odometry
 
 
 def load_pgm(pgm_file):
@@ -45,39 +46,40 @@ class AStarNode:
 class AStarPathPlanner(Node):
     def __init__(self, node_name: str, pgm_file, map_scale, start, goal, min_threshold, output_image_path, grid_pivot):
         super().__init__(node_name)
+        self.start_pose = start
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
         self.path_pub = self.create_publisher(Path, "/path", 10)
-        # self.path_y_pub = self.create_publisher(Float32MultiArray, "/path_y", 10)
+        self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
         self.pgm_file_path = pgm_file
-        self.start_pose = start
         self.goal_pose = goal
         self.min_threshold = min_threshold
         self.output_image_path = output_image_path
         self.astar_path = []
         self.map_scale = map_scale
         self.grid_pivot = grid_pivot
+        self.grid = load_pgm(self.pgm_file_path)
 
     def goal_callback(self, data):
 
-        grid = load_pgm(self.pgm_file_path)
-
-        self.get_logger().info(f'Grid Shape:{grid.shape}, Grid Length:{len(grid)}')
+        self.get_logger().info(f'Grid Shape:{self.grid.shape}, Grid Length:{len(self.grid)}')
 
         pose_stamp = data.pose.position
 
-        # rescale the sim goal_pose to pgm map scales
-        self.goal_pose = (math.floor(len(grid) - ((pose_stamp.y - self.grid_pivot[1]) * self.map_scale)),
-                          math.floor((pose_stamp.x - self.grid_pivot[0]) * self.map_scale))
-        
+
+        self.goal_pose = self.rescale_pose_to_mapsize(pose_stamp, self.grid)
         self.get_logger().info(f'Goal_pose in grid:{self.goal_pose}')
-
-        # calculate remainder
-        #self.grid_pivot[1] += ((len(grid) - (pose_stamp.y - self.grid_pivot[1]) * self.map_scale) % 1) / self.map_scale
-        #self.grid_pivot[0] += (((pose_stamp.x - self.grid_pivot[0]) * self.map_scale) % 1) / self.map_scale
-
         self.get_logger().info(f"Getting goal pose: {pose_stamp}")
 
-        self.plan(grid)
+        self.plan(self.grid)
+
+    def odom_callback(self, msg):
+
+        self.curr_pose = msg.pose.pose.position
+        self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.grid)
+
+    def rescale_pose_to_mapsize(self, pose, grid):
+        return (math.floor(len(grid) - ((pose.y - self.grid_pivot[1]) * self.map_scale)),
+                math.floor((pose.x - self.grid_pivot[0]) * self.map_scale))
 
     def heuristic(self, current, goal):
         # manhattan distance
@@ -110,6 +112,7 @@ class AStarPathPlanner(Node):
 
         for neighbor in neighbors:
             new_position = (current[0] + neighbor[0], current[1] + neighbor[1])
+
             if grid[new_position[0]][new_position[1]] >= 254.0:
                 if self.check_threshold(grid, new_position):
                     possible_moves.append(new_position)
@@ -192,7 +195,7 @@ class AStarPathPlanner(Node):
         self.astar_path = astar_path
         if astar_path:
             path = self.astarpath_to_rospath(astar_path[::10], grid)
-            #path = self.astarpath_to_rospath(astar_path, grid)
+            # path = self.astarpath_to_rospath(astar_path, grid)
             self.path_pub.publish(path)
 
             visualize_path(grid, astar_path, self.output_image_path)
@@ -203,9 +206,12 @@ class AStarPathPlanner(Node):
 
 
 def main(args=None):
-    pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
+    # pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
+    # pgm_file = 'src/milestone_1/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
+    pgm_file = 'maps/closed_walls_map.pgm'
+
     output_image_path = 'path_outputs/map_A_star_path_planning.jpg'
-   # grid_pivot = [-0.806, -4.85]
+    # grid_pivot = [-0.806, -4.85]
     grid_pivot = [-0.806, -4.85]
     start = (38, 16)
     goal = (100, 100)
