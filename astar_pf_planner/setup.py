@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             "potential_field_planner_node=astar_pf_planner.potential_field_planner:main",
-            "astar_node=astar_pf_planner.a_star:main"
+            "astar_node=astar_pf_planner.a_star:main",
+            "obstacle_avoidance_node=astar_pf_planner.obstacle_avoid:main"
         ],
     },
 )

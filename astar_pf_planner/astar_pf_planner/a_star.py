@@ -208,7 +208,7 @@ class AStarPathPlanner(Node):
 def main(args=None):
     # pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
     # pgm_file = 'src/milestone_1/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
-    pgm_file = 'maps/closed_walls_map.pgm'
+    pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
 
     output_image_path = 'path_outputs/map_A_star_path_planning.jpg'
     # grid_pivot = [-0.806, -4.85]
