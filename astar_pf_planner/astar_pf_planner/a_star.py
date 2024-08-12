@@ -125,6 +125,12 @@ class AStarPathPlanner(Node):
 
         return possible_moves
 
+    def check_goal(self, current_state):
+        GOAL_THRESHOLD = 0
+        distance = math.sqrt((current_state[0]-self.goal_pose[0])**2 + (current_state[1]-self.goal_pose[1])**2)
+        print(distance)
+        return distance <= GOAL_THRESHOLD
+
     def astar(self, grid, start, goal, min_threshold) -> Tuple[List[int], int]:
         explored_set = set()
         start_node = AStarNode(start, 0, self.heuristic(start, goal))
@@ -134,7 +140,7 @@ class AStarPathPlanner(Node):
             current_node = heappop(fringe)
             current_state = current_node.state
 
-            if current_state == goal:
+            if self.check_goal(current_state):
                 # Reconstruct the solution path
                 solution_path = [current_state]
                 while current_node.parent:
@@ -224,7 +230,7 @@ def main(args=None):
     start = (0, 0)
     goal = (100, 100)
     min_threshold = 5
-    map_scale = 1/yaml_data.get('resolution')
+    map_scale = 1 / yaml_data.get('resolution')
     rclpy.init(args=args)
     sub = AStarPathPlanner("path_planner", pgm_file, map_scale, start, goal, min_threshold, output_image_path,
                            grid_pivot)
