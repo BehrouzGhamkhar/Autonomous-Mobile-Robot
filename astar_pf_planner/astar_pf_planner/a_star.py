@@ -94,19 +94,19 @@ class AStarPathPlanner(Node):
     def check_threshold(self, grid, new_position):
         len_x = len(grid)
         len_y = len(grid[:][0])
+        step = 2
 
-        for i in range(self.min_threshold + 1):
-            if new_position[0] + i > len_x:
-                return False
-            if new_position[1] + i > len_y:
-                return False
-            if new_position[0] - i < 0:
-                return False
-            if new_position[1] - i < 0:
-                return False
+        if new_position[0] + self.min_threshold > len_x:
+            return False
+        if new_position[1] + self.min_threshold > len_y:
+            return False
+        if new_position[0] - self.min_threshold < 0:
+            return False
+        if new_position[1] - self.min_threshold < 0:
+            return False
 
-        for i in range(-self.min_threshold, self.min_threshold + 1):
-            for j in range(-self.min_threshold, self.min_threshold + 1):
+        for i in range(-self.min_threshold, self.min_threshold + 1, step):
+            for j in range(-self.min_threshold, self.min_threshold + 1, step):
                 if grid[new_position[0] + i][new_position[1] + j] < 254.0:
                     return False
 
@@ -213,8 +213,8 @@ class AStarPathPlanner(Node):
 
 
 def main(args=None):
-    pgm_file = 'maps/closed_walls_map.pgm'
-    yaml_file = 'maps/closed_walls_map.yaml'
+    pgm_file = 'maps/map_layout_1.pgm'
+    yaml_file = 'maps/map_layout_1.yaml'
     # pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
 
     yaml_data = load_yaml(yaml_file)
@@ -223,7 +223,7 @@ def main(args=None):
     grid_pivot = yaml_data.get('origin')[:2]
     start = (0, 0)
     goal = (100, 100)
-    min_threshold = 12
+    min_threshold = 5
     map_scale = 1/yaml_data.get('resolution')
     rclpy.init(args=args)
     sub = AStarPathPlanner("path_planner", pgm_file, map_scale, start, goal, min_threshold, output_image_path,
