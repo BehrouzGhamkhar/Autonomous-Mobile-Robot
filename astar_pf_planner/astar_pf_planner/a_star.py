@@ -198,10 +198,11 @@ class AStarPathPlanner(Node):
 
         astar_path, _ = self.astar(grid, self.start_pose, self.goal_pose, self.min_threshold)
         print(astar_path)
-        self.astar_path = astar_path
+
         if astar_path:
-            path = self.astarpath_to_rospath(astar_path[::10], grid)
-            # path = self.astarpath_to_rospath(astar_path, grid)
+            self.astar_path = astar_path[::10]
+            self.astar_path.append(astar_path[-1])
+            path = self.astarpath_to_rospath(self.astar_path, grid)
             self.path_pub.publish(path)
 
             visualize_path(grid, astar_path, self.output_image_path)
