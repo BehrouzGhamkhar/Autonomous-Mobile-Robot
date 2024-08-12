@@ -13,6 +13,13 @@ import tf_transformations
 from std_msgs.msg import String
 import math
 from nav_msgs.msg import Odometry
+import yaml
+
+
+def load_yaml(yaml_file):
+    with open(yaml_file, 'r') as f:
+        data = yaml.full_load(f)
+        return data
 
 
 def load_pgm(pgm_file):
@@ -64,7 +71,6 @@ class AStarPathPlanner(Node):
         self.get_logger().info(f'Grid Shape:{self.grid.shape}, Grid Length:{len(self.grid)}')
 
         pose_stamp = data.pose.position
-
 
         self.goal_pose = self.rescale_pose_to_mapsize(pose_stamp, self.grid)
         self.get_logger().info(f'Goal_pose in grid:{self.goal_pose}')
@@ -206,17 +212,18 @@ class AStarPathPlanner(Node):
 
 
 def main(args=None):
+    pgm_file = 'maps/closed_walls_map.pgm'
+    yaml_file = 'maps/closed_walls_map.yaml'
     # pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
-    # pgm_file = 'src/milestone_1/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
-    pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
+
+    yaml_data = load_yaml(yaml_file)
 
     output_image_path = 'path_outputs/map_A_star_path_planning.jpg'
-    # grid_pivot = [-0.806, -4.85]
-    grid_pivot = [-0.806, -4.85]
-    start = (38, 16)
+    grid_pivot = yaml_data.get('origin')[:2]
+    start = (0, 0)
     goal = (100, 100)
     min_threshold = 12
-    map_scale = 20.0
+    map_scale = 1/yaml_data.get('resolution')
     rclpy.init(args=args)
     sub = AStarPathPlanner("path_planner", pgm_file, map_scale, start, goal, min_threshold, output_image_path,
                            grid_pivot)
