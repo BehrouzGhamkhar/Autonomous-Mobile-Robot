@@ -51,7 +51,7 @@ class AStarNode:
 
 
 class AStarPathPlanner(Node):
-    def __init__(self, node_name: str, pgm_file, map_scale, start, goal, min_threshold, output_image_path, grid_pivot):
+    def __init__(self, node_name: str, pgm_file, map_scale, start, goal, goal_threshold, min_threshold, output_image_path, grid_pivot):
         super().__init__(node_name)
         self.start_pose = start
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
@@ -59,6 +59,7 @@ class AStarPathPlanner(Node):
         self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
         self.pgm_file_path = pgm_file
         self.goal_pose = goal
+        self.goal_threshold = goal_threshold
         self.min_threshold = min_threshold
         self.output_image_path = output_image_path
         self.astar_path = []
@@ -105,8 +106,8 @@ class AStarPathPlanner(Node):
         if new_position[1] - self.min_threshold < 0:
             return False
 
-        for i in range(-self.min_threshold, self.min_threshold + 1, step):
-            for j in range(-self.min_threshold, self.min_threshold + 1, step):
+        for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
+            for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
                 if grid[new_position[0] + i][new_position[1] + j] < 254.0:
                     return False
 
@@ -114,7 +115,7 @@ class AStarPathPlanner(Node):
 
     def get_possible_moves(self, grid, current: Tuple, min_threshold: int = 0) -> List[Tuple]:
         possible_moves = []
-        neighbors = [(i, j) for i in range(-1, 2) for j in range(-1, 2)]
+        neighbors = [(i, j) for i in range(-2, 4, 2) for j in range(-2, 4, 2)]
 
         for neighbor in neighbors:
             new_position = (current[0] + neighbor[0], current[1] + neighbor[1])
@@ -126,10 +127,8 @@ class AStarPathPlanner(Node):
         return possible_moves
 
     def check_goal(self, current_state):
-        GOAL_THRESHOLD = 0
         distance = math.sqrt((current_state[0]-self.goal_pose[0])**2 + (current_state[1]-self.goal_pose[1])**2)
-        print(distance)
-        return distance <= GOAL_THRESHOLD
+        return distance <= self.goal_threshold
 
     def astar(self, grid, start, goal, min_threshold) -> Tuple[List[int], int]:
         explored_set = set()
@@ -206,7 +205,7 @@ class AStarPathPlanner(Node):
         print(astar_path)
 
         if astar_path:
-            self.astar_path = astar_path[::10]
+            self.astar_path = astar_path[::5]
             self.astar_path.append(astar_path[-1])
             path = self.astarpath_to_rospath(self.astar_path, grid)
             self.path_pub.publish(path)
@@ -229,10 +228,11 @@ def main(args=None):
     grid_pivot = yaml_data.get('origin')[:2]
     start = (0, 0)
     goal = (100, 100)
-    min_threshold = 5
+    goal_threshold = 2
+    min_threshold = 8
     map_scale = 1 / yaml_data.get('resolution')
     rclpy.init(args=args)
-    sub = AStarPathPlanner("path_planner", pgm_file, map_scale, start, goal, min_threshold, output_image_path,
+    sub = AStarPathPlanner("path_planner", pgm_file, map_scale, start, goal, goal_threshold, min_threshold, output_image_path,
                            grid_pivot)
     rclpy.spin(sub)
     rclpy.shutdown()
