@@ -24,8 +24,9 @@ class Subscriber(Node):
         self.goal_pose_received = False
         self.path = []
 
-        self.nearest_path_index = 0
+        self.nearest_path_point = None
         self.goal_index = 0
+
 
         self.env_data = []
         self.k_attraction = -0.5
@@ -46,102 +47,14 @@ class Subscriber(Node):
 
         self.curr_pose = msg.pose.pose
 
-        # Transforming current pose from 'odom' to 'base_laser_front_link'
-        self.curr_pose_laser_link.header.frame_id = 'base_laser_front_link'
-        if self.curr_pose is None:
-            self.get_logger().info('Goal pose not received yet.')
-            return
-
-        try:
-            trans = self.tf_buffer.lookup_transform('base_laser_front_link', 'odom', rclpy.time.Time())
-
-            self.curr_pose_laser_link.pose = do_transform_pose(self.curr_pose, trans)
-
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            self.get_logger().warn("Failed to transform current pose to base_laser_front_ink frame")
-            return
-
-        # Selecting nearest point on the path to current pose
-        individual_pt = PoseStamped()
-
-        if (len(self.path) == 0):
-            print("Path is not received")
-        else:
-            print("Path is received")
-
-            for i, poses in enumerate(self.path):
-
-                # self.get_logger().info(f'Nearest point on path is {self.curr_pose.position.x-poses.pose.pose.position.x}')
-
-                if abs(self.curr_pose.position.x - poses.pose.position.x) < 0.06 and abs(
-                        self.curr_pose.position.y - poses.pose.position.y) < 0.06:
-                    self.nearest_path_index = i
-                    # self.get_logger().info(f'Nearest point on path is {poses.position}')
-                    self.get_logger().info(f'Nearest index is {self.nearest_path_index}')
-
-                '''
-                individual_pt=self.path[1]
-                if self.curr_pose.position==individual_pt.pose.position:
-                    print("starting point is at zero")
-                else:
-                    print("starting point is not at zero")
-                '''
-            print(f"Goal Index is:{self.nearest_path_index + 1}")
-
-            if (self.goal_index) == (len(self.path) - 1):
-                self.goal_index = len(self.path) - 1
-            else:
-                self.goal_index = self.nearest_path_index + 1
-
-            individual_pt = self.path[self.goal_index]
-
-            self.goal_pose = individual_pt.pose
-            # self.get_logger().info(f'Goal_pt is {self.goal_pose}')
-
-            self.goal_pose_laser_link.header.frame_id = 'base_laser_front_link'
-            if self.goal_pose is None:
-                self.get_logger().info('Goal pose not received yet.')
-                return
-
-            try:
-                trans = self.tf_buffer.lookup_transform('base_laser_front_link', 'odom', rclpy.time.Time())
-                self.goal_pose_laser_link.pose = do_transform_pose(self.goal_pose, trans)
-
-
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                self.get_logger().warn("Failed to transform goal pose to base_laser_front_ink frame")
-                return
-
-            self.get_logger().info(f'Goal_pt after transform is {self.goal_pose_laser_link.pose}')
 
     def goalPoseCallback(self, msg):
 
         self.goal_pose_received = True
 
         self.path = msg.poses
-        '''
-        if (msg.header.frame_id!='odom'):
-            self.get_logger().warn(f"Path is not in odom frame!")
-        #below I am assigning only second point to the goal. This was part of initial testing
-        #This is the problem. I need to constantly receive the goal_pose as I am using goal_pose w.r.t. base_laser_link which is moving w.r.t. odom frame
-        self.goal_pose=self.path[1].pose
-        self.get_logger().warn(f"First transformed goal is:{self.goal_pose}")
-        self.goal_pose_laser_link.header.frame_id='base_laser_front_link'
-        if self.goal_pose is None:
-            self.get_logger().info('Goal pose not received yet.')
-            return
-        
-        try:
-            trans = self.tf_buffer.lookup_transform('base_laser_front_link', 'odom', rclpy.time.Time())
-            self.goal_pose_laser_link.pose = do_transform_pose(self.goal_pose, trans)
+        self.nearest_path_point = self.path[0]
 
-
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            self.get_logger().warn("Failed to transform goal pose to base_laser_front_ink frame")
-            return
-        
-        #self.get_logger().warn(f"First transformed goal is:{ self.goal_pose_laser_link.pose.position}")
-        '''
 
     def calc_rep_force_x(self, data):
 
@@ -171,6 +84,9 @@ class Subscriber(Node):
 
         if dist_to_goal < 0.05 and self.goal_pose_received == True:
             self.goal_reached = True
+            current_index = self.path.index(self.nearest_path_point)
+            if current_index < len(self.path) - 1:
+                self.nearest_path_point = self.path[current_index + 1]
         else:
             self.goal_reached = False
         return force
@@ -197,6 +113,42 @@ class Subscriber(Node):
 
     def laserCallback(self, msg):
 
+        # Transforming current pose from 'odom' to 'base_laser_front_link'
+        self.curr_pose_laser_link.header.frame_id = 'base_laser_front_link'
+        if self.curr_pose is None:
+            self.get_logger().info('Goal pose not received yet.')
+            return
+
+        if (len(self.path) == 0):
+            #print("Path is not received")
+            pass
+        else:
+
+            if not self.nearest_path_point:
+                return
+
+            self.goal_pose.pose = self.nearest_path_point.pose
+            self.goal_pose_laser_link.header.frame_id = 'base_link'
+            try:
+                trans = self.tf_buffer.lookup_transform('base_link', 'odom', rclpy.time.Time())
+                self.goal_pose_laser_link.pose = do_transform_pose(self.goal_pose.pose, trans)
+
+
+
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                self.get_logger().warn("Failed to transform goal pose to base_laser_front_ink frame")
+                return
+
+            self.get_logger().info(f'Goal_pt after transform is {self.goal_pose_laser_link.pose}')
+
+
+        rep_force_data, attr_force = self.calculate_forces(msg)
+        self.move_robile(rep_force_data, attr_force)
+
+
+
+
+    def calculate_forces(self, msg):
         self.env_data.clear()
         np_polar_array = self.extract_ranges(msg)
         np_cart_array = self.np_polar2cart(np_polar_array)
@@ -208,14 +160,12 @@ class Subscriber(Node):
         for i, distance in enumerate(msg.ranges):
             self.env_data.append([angle_min + i * angle_increment, distance, np_cart_array[i][0], np_cart_array[i][1]])
 
-        # self.get_logger().info(f'Obstacle_data:{(msg.ranges)}')
         obstacle_points = []
-        rep_force_x = []
-        rep_force_y = []
+
         rep_force_x_overall = []
         rep_force_y_overall = []
         index_start = -1
-        index_end = -1
+
         found_start = False
         for i, data in enumerate(self.env_data):
             if math.isinf(data[1]):
@@ -263,6 +213,10 @@ class Subscriber(Node):
         attr_force_x = self.calc_attractive_force_x()
         attr_force_y = self.calc_attractive_force_y()
 
+        return rep_force_data, [attr_force_x, attr_force_y]
+
+
+    def move_robile(self, rep_force_data, attr_force):
         velocity_x = 0.0
         velocity_y = 0.0
 
@@ -276,8 +230,8 @@ class Subscriber(Node):
             velocity_x = 0.0
             velocity_y = 0.0
         else:
-            velocity_x = velocity_x + attr_force_x
-            velocity_y = velocity_y + attr_force_y
+            velocity_x = velocity_x + attr_force[0]
+            velocity_y = velocity_y + attr_force[1]
 
         # Capping the velocity
         if (velocity_x > 1.0):
@@ -296,6 +250,7 @@ class Subscriber(Node):
         vel_cmd.angular.z = base_link_WZ_vel
 
         self.pub_cmd_vel.publish(vel_cmd)
+
 
     def extract_ranges(self, msg):
         m_array = []
