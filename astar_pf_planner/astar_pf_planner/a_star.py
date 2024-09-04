@@ -194,6 +194,7 @@ class AStarPathPlanner(Node):
 
             path.poses.append(pose)
 
+        print("path is: ", [x.pose.position for x in path.poses])
         return path
 
     def plan(self, grid):
@@ -218,8 +219,8 @@ class AStarPathPlanner(Node):
 
 
 def main(args=None):
-    pgm_file = 'maps/map_layout_1.pgm'
-    yaml_file = 'maps/map_layout_1.yaml'
+    pgm_file = 'maps/map_layout_4.pgm'
+    yaml_file = 'maps/map_layout_4.yaml'
     # pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
 
     yaml_data = load_yaml(yaml_file)
