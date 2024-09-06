@@ -15,28 +15,8 @@ import math
 from nav_msgs.msg import Odometry
 import yaml
 
-
-def load_yaml(yaml_file):
-    with open(yaml_file, 'r') as f:
-        data = yaml.full_load(f)
-        return data
-
-
-def load_pgm(pgm_file):
-    with open(pgm_file, 'rb') as pgmf:
-        img = plt.imread(pgmf)
-
-        # plt.imshow(np.array(img))
-        # plt.show()
-
-        return np.array(img)
-
-
-def visualize_path(grid, path, output_image_path):
-    path_image = cv2.cvtColor(grid, cv2.COLOR_GRAY2BGR)
-    for point in path:
-        path_image[point[0], point[1]] = (0, 50, 255)  # (B,G,R) orange
-    cv2.imwrite(output_image_path, path_image)
+from nav_msgs.msg import OccupancyGrid
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 
 class AStarNode:
@@ -51,42 +31,76 @@ class AStarNode:
 
 
 class AStarPathPlanner(Node):
-    def __init__(self, node_name: str, pgm_file, map_scale, start, goal, goal_threshold, min_threshold, output_image_path, grid_pivot):
+    def __init__(self, node_name: str, map_scale, start, goal, goal_threshold, min_threshold, grid_pivot):
         super().__init__(node_name)
+
+        qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10
+        )
         self.start_pose = start
+
+        self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, qos_profile)
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
         self.path_pub = self.create_publisher(Path, "/path", 10)
         self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
-        self.pgm_file_path = pgm_file
+
         self.goal_pose = goal
         self.goal_threshold = goal_threshold
         self.min_threshold = min_threshold
-        self.output_image_path = output_image_path
         self.astar_path = []
         self.map_scale = map_scale
-        self.grid_pivot = grid_pivot
-        self.grid = load_pgm(self.pgm_file_path)
+        self.occupancy_origin = grid_pivot
+        self.occupancy_grid = []
+
+    def map_callback(self, msg):
+
+        self.get_logger().info('Received map data')
+
+        # Store the occupancy grid data in a 2D array
+        width = msg.info.width
+        height = msg.info.height
+        data = msg.data
+
+        self.occupancy_grid = np.array([[0 for _ in range(height)] for _ in range(width)])
+
+        for i in range(height):
+            for j in range(width):
+                self.occupancy_grid[j][i] = data[i * width + j]
+
+        self.occupancy_grid = np.rot90(self.occupancy_grid, 2)
+
+        self.occupancy_origin = [msg.info.origin.position.x, msg.info.origin.position.y, msg.info.origin.position.z]
+        self.map_scale = 1 / round(msg.info.resolution, 4)
+        # Log some information for debugging
+        self.get_logger().info(f'Map size: {width}x{height}')
+        self.get_logger().info(f'First row: {self.occupancy_grid[0]}')
+        self.get_logger().info(f'Origin: {self.occupancy_origin}')
+        self.get_logger().info(f'Resolution: {self.map_scale}')
+        # Print the map to the terminal
+        # self.print_map()
+
+    def print_map(self):
+        for row in self.occupancy_grid:
+            print(' '.join(f'{cell:3}' for cell in row))
 
     def goal_callback(self, data):
 
-        self.get_logger().info(f'Grid Shape:{self.grid.shape}, Grid Length:{len(self.grid)}')
-
         pose_stamp = data.pose.position
-
-        self.goal_pose = self.rescale_pose_to_mapsize(pose_stamp, self.grid)
+        self.goal_pose = self.rescale_pose_to_mapsize(pose_stamp, self.occupancy_grid)
         self.get_logger().info(f'Goal_pose in grid:{self.goal_pose}')
         self.get_logger().info(f"Getting goal pose: {pose_stamp}")
 
-        self.plan(self.grid)
+        self.plan(self.occupancy_grid)
 
     def odom_callback(self, msg):
-
         self.curr_pose = msg.pose.pose.position
-        self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.grid)
+        self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
 
     def rescale_pose_to_mapsize(self, pose, grid):
-        return (math.floor(len(grid) - ((pose.y - self.grid_pivot[1]) * self.map_scale)),
-                math.floor((pose.x - self.grid_pivot[0]) * self.map_scale))
+        return (math.floor(len(grid) - ((pose.x - self.occupancy_origin[0]) * self.map_scale)),
+                math.floor(len(grid[:][0]) - ((pose.y - self.occupancy_origin[1]) * self.map_scale)))
 
     def heuristic(self, current, goal):
         # manhattan distance
@@ -108,7 +122,8 @@ class AStarPathPlanner(Node):
 
         for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
             for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
-                if grid[new_position[0] + i][new_position[1] + j] < 254.0:
+
+                if grid[new_position[0] + i][new_position[1] + j] > 0:
                     return False
 
         return True
@@ -120,14 +135,14 @@ class AStarPathPlanner(Node):
         for neighbor in neighbors:
             new_position = (current[0] + neighbor[0], current[1] + neighbor[1])
 
-            if grid[new_position[0]][new_position[1]] >= 254.0:
+            if grid[new_position[0]][new_position[1]] == 0:
                 if self.check_threshold(grid, new_position):
                     possible_moves.append(new_position)
 
         return possible_moves
 
     def check_goal(self, current_state):
-        distance = math.sqrt((current_state[0]-self.goal_pose[0])**2 + (current_state[1]-self.goal_pose[1])**2)
+        distance = math.sqrt((current_state[0] - self.goal_pose[0]) ** 2 + (current_state[1] - self.goal_pose[1]) ** 2)
         return distance <= self.goal_threshold
 
     def astar(self, grid, start, goal, min_threshold) -> Tuple[List[int], int]:
@@ -173,8 +188,8 @@ class AStarPathPlanner(Node):
             pose.header.frame_id = 'odom'
 
             # rescale points back to sim scale
-            pose.pose.position.x = ((point[1]) / self.map_scale) + self.grid_pivot[0]
-            pose.pose.position.y = ((len(grid) - point[0]) / self.map_scale) + self.grid_pivot[1]
+            pose.pose.position.x = ((len(grid) - point[0]) / self.map_scale) + self.occupancy_origin[0]
+            pose.pose.position.y = ((len(grid[:][0]) - point[1]) / self.map_scale) + self.occupancy_origin[1]
 
             pose.pose.position.z = 0.0  # Assuming a 2D path
 
@@ -211,7 +226,7 @@ class AStarPathPlanner(Node):
             path = self.astarpath_to_rospath(self.astar_path, grid)
             self.path_pub.publish(path)
 
-            visualize_path(grid, astar_path, self.output_image_path)
+            # visualize_path(grid, astar_path, self.output_image_path)
             self.get_logger().info(f"A star path: {self.astar_path}")
 
         else:
@@ -219,22 +234,14 @@ class AStarPathPlanner(Node):
 
 
 def main(args=None):
-    pgm_file = 'maps/map_layout_4.pgm'
-    yaml_file = 'maps/map_layout_4.yaml'
-    # pgm_file = 'src/Autonomous-Mobile-Robot/astar_pf_planner/astar_pf_planner/maps/closed_walls_map.pgm'
-
-    yaml_data = load_yaml(yaml_file)
-
-    output_image_path = 'path_outputs/map_A_star_path_planning.jpg'
-    grid_pivot = yaml_data.get('origin')[:2]
+    grid_pivot = [0, 0, 0]
     start = (0, 0)
     goal = (100, 100)
     goal_threshold = 2
-    min_threshold = 8
-    map_scale = 1 / yaml_data.get('resolution')
+    min_threshold = 5
+    map_scale = 20
     rclpy.init(args=args)
-    sub = AStarPathPlanner("path_planner", pgm_file, map_scale, start, goal, goal_threshold, min_threshold, output_image_path,
-                           grid_pivot)
+    sub = AStarPathPlanner("path_planner", map_scale, start, goal, goal_threshold, min_threshold, grid_pivot)
     rclpy.spin(sub)
     rclpy.shutdown()
 
