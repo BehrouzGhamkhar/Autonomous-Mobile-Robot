@@ -20,7 +20,7 @@ class Subscriber(Node):
         self.goal_reached = False
 
         self.curr_pose = PoseStamped()
-        self.curr_pose_laser_link = PoseStamped()
+        self.curr_pose_base_link = PoseStamped()
         self.goal_pose_received = False
         self.path = []
 
@@ -47,6 +47,15 @@ class Subscriber(Node):
 
         self.curr_pose = msg.pose.pose
 
+        try:
+            trans = self.tf_buffer.lookup_transform('base_link', 'map', rclpy.time.Time())
+
+            self.curr_pose_base_link.pose = do_transform_pose(self.curr_pose, trans)
+
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            self.get_logger().warn("Failed to transform current pose to base_laser_front_ink frame")
+            return
+
 
     def goalPoseCallback(self, msg):
 
@@ -71,8 +80,8 @@ class Subscriber(Node):
 
     def calc_attractive_force_x(self):
 
-        dx = self.curr_pose_laser_link.pose.position.x - self.goal_pose_laser_link.pose.position.x
-        dy = self.curr_pose_laser_link.pose.position.y - self.goal_pose_laser_link.pose.position.y
+        dx = self.curr_pose_base_link.pose.position.x - self.goal_pose_laser_link.pose.position.x
+        dy = self.curr_pose_base_link.pose.position.y - self.goal_pose_laser_link.pose.position.y
         force = 0
 
         dist_to_goal = math.sqrt(dx ** 2 + dy ** 2)
@@ -92,8 +101,8 @@ class Subscriber(Node):
         return force
 
     def calc_attractive_force_y(self):
-        dx = self.curr_pose_laser_link.pose.position.x - self.goal_pose_laser_link.pose.position.x
-        dy = self.curr_pose_laser_link.pose.position.y - self.goal_pose_laser_link.pose.position.y
+        dx = self.curr_pose_base_link.pose.position.x - self.goal_pose_laser_link.pose.position.x
+        dy = self.curr_pose_base_link.pose.position.y - self.goal_pose_laser_link.pose.position.y
         force = 0
 
         dist_to_goal = math.sqrt(dx ** 2 + dy ** 2)
@@ -114,7 +123,7 @@ class Subscriber(Node):
     def laserCallback(self, msg):
 
         # Transforming current pose from 'odom' to 'base_laser_front_link'
-        self.curr_pose_laser_link.header.frame_id = 'base_link'
+        self.curr_pose_base_link.header.frame_id = 'base_link'
         if self.curr_pose is None:
             self.get_logger().info('Goal pose not received yet.')
             return
@@ -130,10 +139,8 @@ class Subscriber(Node):
             self.goal_pose.pose = self.nearest_path_point.pose
             self.goal_pose_laser_link.header.frame_id = 'base_link'
             try:
-                trans = self.tf_buffer.lookup_transform('base_link', 'odom', rclpy.time.Time())
+                trans = self.tf_buffer.lookup_transform('base_link', 'map', rclpy.time.Time())
                 self.goal_pose_laser_link.pose = do_transform_pose(self.goal_pose.pose, trans)
-
-
 
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 self.get_logger().warn("Failed to transform goal pose to base_laser_front_ink frame")
@@ -235,14 +242,19 @@ class Subscriber(Node):
 
         # Capping the velocity
         if (velocity_x > 1.0):
-            velocity_x = 0.5
+            velocity_x = 1.0
+        elif (velocity_x <= 0):
+            velocity_x = 0.0
 
         if (velocity_y > 0.5):
-            velocity_y = 0.2
+            velocity_y = 0.5
 
         # As addition and subtraction of forces is done at the base_laser_front_link, I am converting corrsponding velocities to base_link.
+        # v = r * omega
+
+        distance_baselink_to_laserfront = 0.45
         base_link_x_vel = velocity_x
-        base_link_WZ_vel = velocity_y / 0.45
+        base_link_WZ_vel = velocity_y / distance_baselink_to_laserfront
 
         # Publishing velocity data into cmd_vel
         vel_cmd = Twist()
