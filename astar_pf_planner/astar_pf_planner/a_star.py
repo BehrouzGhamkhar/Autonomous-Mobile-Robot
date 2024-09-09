@@ -179,13 +179,13 @@ class AStarPathPlanner(Node):
         path = Path()
         path.header = Header()
         path.header.stamp = self.get_clock().now().to_msg()
-        path.header.frame_id = "odom"
+        path.header.frame_id = "map"
 
         for i, point in enumerate(astar_path):
             pose = PoseStamped()
             pose.header = Header()
             pose.header.stamp = self.get_clock().now().to_msg()
-            pose.header.frame_id = 'odom'
+            pose.header.frame_id = 'map'
 
             # rescale points back to sim scale
             pose.pose.position.x = ((len(grid) - point[0]) / self.map_scale) + self.occupancy_origin[0]
