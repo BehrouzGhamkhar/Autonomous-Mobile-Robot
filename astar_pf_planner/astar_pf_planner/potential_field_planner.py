@@ -77,12 +77,12 @@ class Subscriber(Node):
 
         dist_to_goal = math.sqrt(dx ** 2 + dy ** 2)
 
-        if dist_to_goal > 0.05 and self.goal_pose_received == True:
+        if dist_to_goal >= 0.2 and self.goal_pose_received == True:
             force = self.k_attraction * (dx) / dist_to_goal
         else:
             force = 0.0
 
-        if dist_to_goal < 0.05 and self.goal_pose_received == True:
+        if dist_to_goal < 0.2 and self.goal_pose_received == True:
             self.goal_reached = True
             current_index = self.path.index(self.nearest_path_point)
             if current_index < len(self.path) - 1:
@@ -98,13 +98,13 @@ class Subscriber(Node):
 
         dist_to_goal = math.sqrt(dx ** 2 + dy ** 2)
 
-        if dist_to_goal > 0.05 and self.goal_pose_received == True:
+        if dist_to_goal > 0.2 and self.goal_pose_received == True:
             force = self.k_attraction * (dy) / dist_to_goal
 
         else:
             force = 0.0
 
-        if dist_to_goal < 0.05 and self.goal_pose_received == True:
+        if dist_to_goal < 0.2 and self.goal_pose_received == True:
             self.goal_reached = True
         else:
             self.goal_reached = False
@@ -114,7 +114,7 @@ class Subscriber(Node):
     def laserCallback(self, msg):
 
         # Transforming current pose from 'odom' to 'base_laser_front_link'
-        self.curr_pose_laser_link.header.frame_id = 'base_laser_front_link'
+        self.curr_pose_laser_link.header.frame_id = 'base_link'
         if self.curr_pose is None:
             self.get_logger().info('Goal pose not received yet.')
             return
