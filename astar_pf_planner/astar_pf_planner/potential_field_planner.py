@@ -31,7 +31,9 @@ class Subscriber(Node):
         self.env_data = []
         self.k_attraction = -0.5
         self.k_replusion = 0.5
-        self.threshold_dist = 0.7
+        self.threshold_dist = 1.0
+        self.MAX_LINEAR_VELOCITY = 0.5  # Maximum linear velocity
+        self.MAX_ANGULAR_VELOCITY = 1.0  # Maximum angular velocity
 
         self.laser_scan_sub = self.create_subscription(LaserScan, "/scan", self.laserCallback, 10)
         self.goal_pose_sub = self.create_subscription(Path, "/path", self.goalPoseCallback, 10)
@@ -125,7 +127,7 @@ class Subscriber(Node):
         # Transforming current pose from 'odom' to 'base_laser_front_link'
         self.curr_pose_base_link.header.frame_id = 'base_link'
         if self.curr_pose is None:
-            self.get_logger().info('Goal pose not received yet.')
+            # self.get_logger().info('Goal pose not received yet.')
             return
 
         if (len(self.path) == 0):
@@ -141,19 +143,14 @@ class Subscriber(Node):
             try:
                 trans = self.tf_buffer.lookup_transform('base_link', 'map', rclpy.time.Time())
                 self.goal_pose_laser_link.pose = do_transform_pose(self.goal_pose.pose, trans)
+                # self.get_logger().info(f'Goal_pt after transform is {self.goal_pose_laser_link.pose}')
 
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 self.get_logger().warn("Failed to transform goal pose to base_laser_front_ink frame")
                 return
 
-            self.get_logger().info(f'Goal_pt after transform is {self.goal_pose_laser_link.pose}')
-
-
         rep_force_data, attr_force = self.calculate_forces(msg)
         self.move_robile(rep_force_data, attr_force)
-
-
-
 
     def calculate_forces(self, msg):
         self.env_data.clear()
@@ -240,14 +237,14 @@ class Subscriber(Node):
             velocity_x = velocity_x + attr_force[0]
             velocity_y = velocity_y + attr_force[1]
 
-        # Capping the velocity
-        if (velocity_x > 1.0):
-            velocity_x = 1.0
-        elif (velocity_x <= 0):
-            velocity_x = 0.0
+        # # Capping the velocity
+        # if (velocity_x > 1.0):
+        #     velocity_x = 1.0
+        # elif (velocity_x <= 0):
+        #     velocity_x = 0.0
 
-        if (velocity_y > 0.5):
-            velocity_y = 0.5
+        # if (velocity_y > 0.5):
+        #     velocity_y = 0.5
 
         # As addition and subtraction of forces is done at the base_laser_front_link, I am converting corrsponding velocities to base_link.
         # v = r * omega
@@ -258,8 +255,8 @@ class Subscriber(Node):
 
         # Publishing velocity data into cmd_vel
         vel_cmd = Twist()
-        vel_cmd.linear.x = base_link_x_vel
-        vel_cmd.angular.z = base_link_WZ_vel
+        vel_cmd.linear.x = np.clip(base_link_x_vel, 0.0, self.MAX_LINEAR_VELOCITY)
+        vel_cmd.angular.z = np.clip(base_link_WZ_vel, -self.MAX_ANGULAR_VELOCITY, self.MAX_ANGULAR_VELOCITY)
 
         self.pub_cmd_vel.publish(vel_cmd)
 

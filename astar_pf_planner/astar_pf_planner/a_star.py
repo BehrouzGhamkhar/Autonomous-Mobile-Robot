@@ -13,7 +13,6 @@ import tf_transformations
 from std_msgs.msg import String
 import math
 from nav_msgs.msg import Odometry
-import yaml
 
 from nav_msgs.msg import OccupancyGrid
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
@@ -31,7 +30,7 @@ class AStarNode:
 
 
 class AStarPathPlanner(Node):
-    def __init__(self, node_name: str, map_scale, start, goal, goal_threshold, min_threshold, grid_pivot):
+    def __init__(self, node_name: str, start, goal, goal_threshold, min_threshold, grid_pivot):
         super().__init__(node_name)
 
         qos_profile = QoSProfile(
@@ -50,7 +49,7 @@ class AStarPathPlanner(Node):
         self.goal_threshold = goal_threshold
         self.min_threshold = min_threshold
         self.astar_path = []
-        self.map_scale = map_scale
+        self.map_scale = 20
         self.occupancy_origin = grid_pivot
         self.occupancy_grid = []
 
@@ -75,15 +74,8 @@ class AStarPathPlanner(Node):
         self.map_scale = 1 / round(msg.info.resolution, 4)
         # Log some information for debugging
         self.get_logger().info(f'Map size: {width}x{height}')
-        self.get_logger().info(f'First row: {self.occupancy_grid[0]}')
         self.get_logger().info(f'Origin: {self.occupancy_origin}')
         self.get_logger().info(f'Resolution: {self.map_scale}')
-        # Print the map to the terminal
-        # self.print_map()
-
-    def print_map(self):
-        for row in self.occupancy_grid:
-            print(' '.join(f'{cell:3}' for cell in row))
 
     def goal_callback(self, data):
 
@@ -109,7 +101,6 @@ class AStarPathPlanner(Node):
     def check_threshold(self, grid, new_position):
         len_x = len(grid)
         len_y = len(grid[:][0])
-        step = 2
 
         if new_position[0] + self.min_threshold > len_x:
             return False
@@ -238,10 +229,9 @@ def main(args=None):
     start = (0, 0)
     goal = (100, 100)
     goal_threshold = 2
-    min_threshold = 5
-    map_scale = 20
+    min_threshold = 7
     rclpy.init(args=args)
-    sub = AStarPathPlanner("path_planner", map_scale, start, goal, goal_threshold, min_threshold, grid_pivot)
+    sub = AStarPathPlanner("path_planner", start, goal, goal_threshold, min_threshold, grid_pivot)
     rclpy.spin(sub)
     rclpy.shutdown()
 
