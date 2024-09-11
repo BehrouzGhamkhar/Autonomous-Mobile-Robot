@@ -33,7 +33,7 @@ class Subscriber(Node):
         self.k_replusion = 0.5
         self.threshold_dist = 1.0
         self.MAX_LINEAR_VELOCITY = 0.5  # Maximum linear velocity
-        self.MAX_ANGULAR_VELOCITY = 1.0  # Maximum angular velocity
+        self.MAX_ANGULAR_VELOCITY = 2.0  # Maximum angular velocity
 
         self.laser_scan_sub = self.create_subscription(LaserScan, "/scan", self.laserCallback, 10)
         self.goal_pose_sub = self.create_subscription(Path, "/path", self.goalPoseCallback, 10)
@@ -125,7 +125,7 @@ class Subscriber(Node):
     def laserCallback(self, msg):
 
         # Transforming current pose from 'odom' to 'base_laser_front_link'
-        self.curr_pose_base_link.header.frame_id = 'base_link'
+        self.curr_pose_base_link.header.frame_id = 'base_laser_front_link'
         if self.curr_pose is None:
             # self.get_logger().info('Goal pose not received yet.')
             return
@@ -149,8 +149,8 @@ class Subscriber(Node):
                 self.get_logger().warn("Failed to transform goal pose to base_laser_front_ink frame")
                 return
 
-        rep_force_data, attr_force = self.calculate_forces(msg)
-        self.move_robile(rep_force_data, attr_force)
+            rep_force_data, attr_force = self.calculate_forces(msg)
+            self.move_robile(rep_force_data, attr_force)
 
     def calculate_forces(self, msg):
         self.env_data.clear()
@@ -249,16 +249,42 @@ class Subscriber(Node):
         # As addition and subtraction of forces is done at the base_laser_front_link, I am converting corrsponding velocities to base_link.
         # v = r * omega
 
-        distance_baselink_to_laserfront = 0.45
+        rotation_speed_mult = 3
         base_link_x_vel = velocity_x
-        base_link_WZ_vel = velocity_y / distance_baselink_to_laserfront
+        base_link_WZ_vel = velocity_y * rotation_speed_mult
 
         # Publishing velocity data into cmd_vel
         vel_cmd = Twist()
+
+        # align robile to first waypoint
+        goal_index = self.path.index(self.nearest_path_point)
+
+        #if not self.align_robile_to_goal():
+        #    return
+        
+
         vel_cmd.linear.x = np.clip(base_link_x_vel, 0.0, self.MAX_LINEAR_VELOCITY)
         vel_cmd.angular.z = np.clip(base_link_WZ_vel, -self.MAX_ANGULAR_VELOCITY, self.MAX_ANGULAR_VELOCITY)
-
         self.pub_cmd_vel.publish(vel_cmd)
+
+        
+
+
+    def align_robile_to_goal(self):
+            
+        angle_difference = 0
+        robot_yaw = 2.0 * np.arctan2(self.curr_pose.orientation.z,self.curr_pose.orientation.w)
+        goal_yaw = 2.0 * np.arctan2(self.nearest_path_point.pose.orientation.z,self.nearest_path_point.pose.orientation.w)
+        angle_difference = robot_yaw - goal_yaw
+
+        if abs(angle_difference) > 0.5: 
+            return True
+        
+        vel_cmd = Twist()
+        vel_cmd.linear.x = 0.0
+        vel_cmd.angular.z = -1.0 if angle_difference < 0 else 1.0
+        self.pub_cmd_vel.publish(vel_cmd)
+        return False
 
 
     def extract_ranges(self, msg):

@@ -194,6 +194,7 @@ class AStarPathPlanner(Node):
                 pose.pose.orientation.y = quaternion[1]
                 pose.pose.orientation.z = quaternion[2]
                 pose.pose.orientation.w = quaternion[3]
+                # TODO: ????
             else:  # For the last point, use the default orientation
                 pose.pose.orientation.z = 0.0
                 pose.pose.orientation.w = 1.0
@@ -212,7 +213,7 @@ class AStarPathPlanner(Node):
         print(astar_path)
 
         if astar_path:
-            self.astar_path = astar_path[::5]
+            self.astar_path = astar_path[2::5] if len(astar_path) > 2 else astar_path[::5]
             self.astar_path.append(astar_path[-1])
             path = self.astarpath_to_rospath(self.astar_path, grid)
             self.path_pub.publish(path)
