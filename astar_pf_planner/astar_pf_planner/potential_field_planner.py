@@ -250,9 +250,9 @@ class Subscriber(Node):
         # As addition and subtraction of forces is done at the base_laser_front_link, I am converting corrsponding velocities to base_link.
         # v = r * omega
 
-        rotation_speed_mult = 3
+        rotation_speed_mult = 0.2
         base_link_x_vel = velocity_x
-        base_link_WZ_vel = velocity_y * rotation_speed_mult
+        base_link_WZ_vel = velocity_y  / rotation_speed_mult
 
         # Publishing velocity data into cmd_vel
         vel_cmd = Twist()

@@ -53,28 +53,30 @@ class AStarPathPlanner(Node):
         self.map_scale = 20
         self.occupancy_origin = grid_pivot
         self.occupancy_grid = []
+        self.grid_width = 0
+        self.grid_height = 0
 
     def map_callback(self, msg):
 
         self.get_logger().info('Received map data')
 
         # Store the occupancy grid data in a 2D array
-        width = msg.info.width
-        height = msg.info.height
+        self.grid_width = msg.info.width
+        self.grid_height = msg.info.height
         data = msg.data
 
-        self.occupancy_grid = np.array([[0 for _ in range(height)] for _ in range(width)])
+        self.occupancy_grid = np.array([[0 for _ in range(self.grid_height)] for _ in range(self.grid_width)])
 
-        for i in range(height):
-            for j in range(width):
-                self.occupancy_grid[j][i] = data[i * width + j]
+        for i in range(self.grid_height):
+            for j in range(self.grid_width):
+                self.occupancy_grid[j][i] = data[i * self.grid_width + j]
 
         self.occupancy_grid = np.rot90(self.occupancy_grid, 2)
 
         self.occupancy_origin = [msg.info.origin.position.x, msg.info.origin.position.y, msg.info.origin.position.z]
         self.map_scale = 1 / round(msg.info.resolution, 4)
         # Log some information for debugging
-        self.get_logger().info(f'Map size: {width}x{height}')
+        self.get_logger().info(f'Map size: {self.grid_width}x{self.grid_height}')
         self.get_logger().info(f'Origin: {self.occupancy_origin}')
         self.get_logger().info(f'Resolution: {self.map_scale}')
 
@@ -93,20 +95,19 @@ class AStarPathPlanner(Node):
         self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
 
     def rescale_pose_to_mapsize(self, pose, grid):
-        return (math.floor(len(grid) - ((pose.x - self.occupancy_origin[0]) * self.map_scale)),
-                math.floor(len(grid[:][0]) - ((pose.y - self.occupancy_origin[1]) * self.map_scale)))
+        return (math.floor(self.grid_width - ((pose.x - self.occupancy_origin[0]) * self.map_scale)),
+                math.floor(self.grid_height - ((pose.y - self.occupancy_origin[1]) * self.map_scale)))
 
     def heuristic(self, current, goal):
         # manhattan distance
-        return abs(current[0] - goal[0]) + abs(current[1] - goal[1])
+        #return abs(current[0] - goal[0]) + abs(current[1] - goal[1])
+        # euclidian
+        return math.sqrt((current[0] - goal[0]) ** 2 + (current[1] - goal[1]) ** 2)
 
     def check_threshold(self, grid, new_position):
-        len_x = len(grid)
-        len_y = len(grid[:][0])
-
-        if new_position[0] + self.min_threshold > len_x:
+        if new_position[0] + self.min_threshold > self.grid_width:
             return False
-        if new_position[1] + self.min_threshold > len_y:
+        if new_position[1] + self.min_threshold > self.grid_height:
             return False
         if new_position[0] - self.min_threshold < 0:
             return False
@@ -125,12 +126,15 @@ class AStarPathPlanner(Node):
         possible_moves = []
         neighbors = [(i, j) for i in range(-2, 4, 2) for j in range(-2, 4, 2)]
 
+
         for neighbor in neighbors:
             new_position = (current[0] + neighbor[0], current[1] + neighbor[1])
-
-            if grid[new_position[0]][new_position[1]] == 0:
-                if self.check_threshold(grid, new_position):
-                    possible_moves.append(new_position)
+            if new_position[0] > self.grid_width or new_position[1] > self.grid_height:
+                continue
+            if grid[new_position[0]][new_position[1]] != 0:
+                continue
+            if self.check_threshold(grid, new_position):
+                possible_moves.append(new_position)
 
         return possible_moves
 
