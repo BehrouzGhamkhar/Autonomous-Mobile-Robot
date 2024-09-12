@@ -129,16 +129,12 @@ class AStarPathPlanner(Node):
 
         for neighbor in neighbors:
             new_position = (current[0] + neighbor[0], current[1] + neighbor[1])
-            if new_position[0] > self.grid_width or new_position[1] > self.grid_height:
-                continue
-            if grid[new_position[0]][new_position[1]] != 0:
-                continue
-            if self.check_threshold(grid, new_position):
+            if self.check_valid_position(grid, new_position):
                 possible_moves.append(new_position)
 
         return possible_moves
 
-    def check_goal(self, current_state):
+    def reached_goal(self, current_state):
         distance = math.sqrt((current_state[0] - self.goal_pose[0]) ** 2 + (current_state[1] - self.goal_pose[1]) ** 2)
         return distance <= self.goal_threshold
 
@@ -151,7 +147,7 @@ class AStarPathPlanner(Node):
             current_node = heappop(fringe)
             current_state = current_node.state
 
-            if self.check_goal(current_state):
+            if self.reached_goal(current_state):
                 # Reconstruct the solution path
                 solution_path = [current_state]
                 while current_node.parent:
@@ -210,8 +206,17 @@ class AStarPathPlanner(Node):
         print("path is: ", [x.pose.position for x in path.poses])
         return path
 
+    def check_valid_position(self, grid, pose):
+        if pose[0] >= self.grid_width or pose[1] >= self.grid_height:
+            return False
+        if grid[pose[0]][pose[1]] != 0:
+            return False
+        if not self.check_threshold(grid, pose):
+            return False
+        return True
+
     def plan(self, grid):
-        if not self.check_threshold(grid, self.goal_pose):
+        if not self.check_valid_position(grid, self.goal_pose):
             self.get_logger().info(f"Goal Pose is not valid!")
             return False
 
