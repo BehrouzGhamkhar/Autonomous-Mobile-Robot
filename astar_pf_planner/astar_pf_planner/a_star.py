@@ -46,6 +46,7 @@ class AStarPathPlanner(Node):
         self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
 
         self.goal_pose = goal
+        self.goal_orientation = None
         self.goal_threshold = goal_threshold
         self.min_threshold = min_threshold
         self.astar_path = []
@@ -80,6 +81,7 @@ class AStarPathPlanner(Node):
     def goal_callback(self, data):
 
         pose_stamp = data.pose.position
+        self.goal_orientation = data.pose.orientation
         self.goal_pose = self.rescale_pose_to_mapsize(pose_stamp, self.occupancy_grid)
         self.get_logger().info(f'Goal_pose in grid:{self.goal_pose}')
         self.get_logger().info(f"Getting goal pose: {pose_stamp}")
@@ -189,15 +191,15 @@ class AStarPathPlanner(Node):
                 dx = next_point[0] - point[0]
                 dy = next_point[1] - point[1]
                 yaw = math.atan2(dy, dx)
-                quaternion = tf_transformations.quaternion_from_euler(0, 0, yaw)
+                quaternion = tf_transformations.quaternion_from_euler(0, 0, -yaw)
                 pose.pose.orientation.x = quaternion[0]
                 pose.pose.orientation.y = quaternion[1]
                 pose.pose.orientation.z = quaternion[2]
                 pose.pose.orientation.w = quaternion[3]
                 # TODO: ????
             else:  # For the last point, use the default orientation
-                pose.pose.orientation.z = 0.0
-                pose.pose.orientation.w = 1.0
+                pose.pose.orientation.z = self.goal_orientation.z
+                pose.pose.orientation.w = self.goal_orientation.w
 
             path.poses.append(pose)
 

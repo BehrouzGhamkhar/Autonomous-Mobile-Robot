@@ -31,7 +31,7 @@ class Subscriber(Node):
         self.env_data = []
         self.k_attraction = -0.5
         self.k_replusion = 0.5
-        self.threshold_dist = 1.0
+        self.threshold_dist =  1.0
         self.MAX_LINEAR_VELOCITY = 0.5  # Maximum linear velocity
         self.MAX_ANGULAR_VELOCITY = 2.0  # Maximum angular velocity
 
@@ -162,6 +162,7 @@ class Subscriber(Node):
         angle_min = msg.angle_min
 
         for i, distance in enumerate(msg.ranges):
+            #if distance < self.threshold_dist:
             self.env_data.append([angle_min + i * angle_increment, distance, np_cart_array[i][0], np_cart_array[i][1]])
 
         obstacle_points = []
@@ -282,7 +283,7 @@ class Subscriber(Node):
         
         vel_cmd = Twist()
         vel_cmd.linear.x = 0.0
-        vel_cmd.angular.z = -1.0 if angle_difference < 0 else 1.0
+        vel_cmd.angular.z = -self.MAX_ANGULAR_VELOCITY if angle_difference < 0 else self.MAX_ANGULAR_VELOCITY
         self.pub_cmd_vel.publish(vel_cmd)
         return False
 
