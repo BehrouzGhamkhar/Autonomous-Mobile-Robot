@@ -24,12 +24,14 @@ class PathFollowingNode(Node):
         self.k_att = 1.0  # Attractive coefficient
 
         # Max velocities
-        self.MAX_LINEAR_VELOCITY = 0.7  # Maximum linear velocity
-        self.MAX_ANGULAR_VELOCITY = 1.5  # Maximum angular velocity
+        self.MAX_LINEAR_VELOCITY = 0.2  # Maximum linear velocity
+        self.MAX_ANGULAR_VELOCITY = 0.5  # Maximum angular velocity
 
         self.waypoints = []  # List to store waypoints
         self.current_waypoint_index = 0  # Index of the current waypoint
         self.current_pose = {'x': 0.0, 'y': 0.0, 'theta': 0.0}  # Placeholder for the current pose
+
+        self.min_range = 5.0
 
     def path_callback(self, msg):
         self.waypoints = [pose.pose for pose in msg.poses]
@@ -50,6 +52,12 @@ class PathFollowingNode(Node):
         self.current_pose['theta'] = euler[2]  # Yaw
 
     def scan_callback(self, msg):
+        # self.min_range = 5.0
+        # for i, range in enumerate(msg.ranges):
+        #     if range < self.min_range:
+        #         self.min_range = range
+        #     self.get_logger().warn(f' Min Range is: {self.min_range}')
+        
         if self.current_pose is None or not self.waypoints:
             return  # Wait until we have the current pose and waypoints
 
@@ -89,16 +97,19 @@ class PathFollowingNode(Node):
         msg = Twist()
         msg.linear.x = 0.0
         msg.angular.z = np.clip(angle_to_goal, -self.MAX_ANGULAR_VELOCITY, self.MAX_ANGULAR_VELOCITY)
-        self.cmd_publisher.publish(msg)
+        self.publish_cmd_vel(msg)
+        #self.cmd_publisher.publish(msg)
 
     def calculate_repulsive_forces(self, scan):
         forces = np.zeros(2)
         for i, range in enumerate(scan.ranges):
-            if np.isinf(range) or range >= scan.range_max or range > 0.5:  # Only consider obstacles within 1m
+            if np.isinf(range) or range >= scan.range_max or range > 1.0 or range < scan.range_min or np.isnan(range):  # Only consider obstacles within 1m
+                # if np.isnan(range):
+                #     self.get_logger().warn(f'Range is NAN: {range}')
                 continue  # Skip if the range is infinite, beyond the maximum range, or beyond 1m
             angle = scan.angle_min + i * scan.angle_increment
             force_direction = np.array([np.cos(angle), np.sin(angle)])
-            force_magnitude = self.k_rep * (1.0 / range - 1.0 / scan.range_max) / (range ** 2)
+            force_magnitude = self.k_rep * (1.0 / (range + 1e-6) - 1.0 / scan.range_max) / (range ** 2)
             forces -= force_magnitude * force_direction
 
         return forces
@@ -107,7 +118,7 @@ class PathFollowingNode(Node):
         direction_to_goal = waypoint_base_link
         distance_to_goal = np.linalg.norm(direction_to_goal)
 
-        if distance_to_goal < 0.5:
+        if distance_to_goal < 0.2:
             # Check if we reached the waypoint
             self.get_logger().info(f'Reached waypoint {self.current_waypoint_index}')
             self.current_waypoint_index += 1  # Move to the next waypoint
@@ -123,7 +134,7 @@ class PathFollowingNode(Node):
         force_magnitude = np.linalg.norm(force)
         distance_to_goal = np.linalg.norm(waypoint_base_link)
 
-        if distance_to_goal < 0.05:
+        if distance_to_goal < 0.2:
             # Stop the robot if it is very close to the goal
             msg.linear.x = 0.0
             msg.angular.z = 0.0
@@ -135,6 +146,11 @@ class PathFollowingNode(Node):
             msg.angular.z = np.clip(np.arctan2(force[1], force[0]), -self.MAX_ANGULAR_VELOCITY,
                                     self.MAX_ANGULAR_VELOCITY)
 
+        self.publish_cmd_vel(msg)
+        #self.cmd_publisher.publish(msg)
+
+    def publish_cmd_vel(self, msg):
+       
         self.get_logger().info(f'Moving with linear x: {msg.linear.x} angular z: {msg.angular.z}')
         self.cmd_publisher.publish(msg)
 

@@ -1,11 +1,9 @@
 import numpy as np
-import cv2
 from heapq import heappop, heappush
-import matplotlib.pyplot as plt
 from typing import List, Tuple
 import rclpy
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import Path
 from rclpy.node import Node
 from std_msgs.msg import Header
@@ -43,7 +41,8 @@ class AStarPathPlanner(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, qos_profile)
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
         self.path_pub = self.create_publisher(Path, "/path", 10)
-        self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
+        # self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
+        self.amcl_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
 
         self.goal_pose = goal
         self.goal_orientation = None
@@ -90,7 +89,11 @@ class AStarPathPlanner(Node):
 
         self.plan(self.occupancy_grid)
 
-    def odom_callback(self, msg):
+    # def odom_callback(self, msg):
+    #     self.curr_pose = msg.pose.pose.position
+    #     self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
+
+    def amcl_pose_callback(self, msg):
         self.curr_pose = msg.pose.pose.position
         self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
 
