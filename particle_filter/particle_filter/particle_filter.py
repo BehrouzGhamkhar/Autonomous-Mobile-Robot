@@ -3,7 +3,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from rclpy.serialization import deserialize_message
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import PoseStamped, Twist, PoseArray, Pose, PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, Twist, PoseArray, Pose, PoseWithCovarianceStamped, TransformStamped
 from tf2_msgs.msg import TFMessage
 import numpy as np
 import math
@@ -16,6 +16,8 @@ import math
 from numpy import pi
 import sys
 from scipy.stats import norm
+
+from tf2_ros import TransformBroadcaster
 
 
 class ParticleFilter(Node):
@@ -45,6 +47,8 @@ class ParticleFilter(Node):
 
         self.pub_hypotheses = self.create_publisher(PoseArray, "/hypotheses", 10)
         self.pub_estimated_pose = self.create_publisher(PoseStamped, "/estimated_pose", 10)
+        self.tf_broadcaster = TransformBroadcaster(self)
+
         self.curr_pose_sub = self.create_subscription(Odometry, "/odom", self.odomCallback, 10)
         self.laser_scan_sub = self.create_subscription(LaserScan, "/scan", self.scanCallback, 10)
         self.init_pose_sub = self.create_subscription(PoseWithCovarianceStamped, "/initialpose", self.initposeCallback, 10)
@@ -126,6 +130,34 @@ class ParticleFilter(Node):
         estimated_pose.pose.orientation.w=w
        
         self.pub_estimated_pose.publish(estimated_pose)
+
+
+    def publish_transform(self,est_pose):
+        t = TransformStamped()
+
+        # Read message content and assign it to
+        # corresponding tf variables
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'map'
+        t.child_frame_id = 'base_link'
+
+        # Turtle only exists in 2D, thus we get x and y translation
+        # coordinates from the message and set the z coordinate to 0
+        t.transform.translation.x = est_pose.pose.position.x
+        t.transform.translation.y = est_pose.pose.position.y
+        t.transform.translation.z = 0.0
+
+        # For the same reason, turtle can only rotate around one axis
+        # and this why we set rotation in x and y to 0 and obtain
+        # rotation in z axis from the message
+        t.transform.rotation.x = est_pose.pose.orientation.x
+        t.transform.rotation.y = est_pose.pose.orientation.y
+        t.transform.rotation.z = est_pose.pose.orientation.z
+        t.transform.rotation.w = est_pose.pose.orientation.w
+
+        # Send the transformation
+        self.tf_broadcaster.sendTransform(t)
+
     
 
     def odomCallback(self,msg):
@@ -360,7 +392,8 @@ class ParticleFilter(Node):
             print(f"resampled_particles:{(self.particles)}")
             
             self.publish_particles(self.particles)
-            self.publish_estimated_pose(self.particles)
+            estimated_pose=self.publish_estimated_pose(self.particles)
+            self.publish_transform(estimated_pose)
 
             self.resample_around_top3(self.particles)
 
