@@ -45,6 +45,7 @@ class AStarPathPlanner(Node):
         # self.amcl_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
         self.astar_result_pub = self.create_publisher(String, "/astar_result", 10)
+        self.curr_pose = None
         self.goal = None
         self.goal_pose = goal
         self.goal_orientation = None
@@ -164,7 +165,7 @@ class AStarPathPlanner(Node):
                     current_node = current_node.parent
                     solution_path.append(current_node.state)
                 solution_path.reverse()
-                return solution_path, len(explored_set)
+                return solution_path
 
             explored_set.add(current_state)
 
@@ -175,7 +176,7 @@ class AStarPathPlanner(Node):
                     new_node = AStarNode(new_state, new_g, new_f, parent=current_node)
                     heappush(fringe, new_node)
 
-        return [], len(explored_set)
+        return []
 
     def astarpath_to_rospath(self, grid, astar_path = None):
 
@@ -239,7 +240,7 @@ class AStarPathPlanner(Node):
 
         #astar_path, _ = self.astar(grid, self.start_pose, self.goal_pose, self.min_threshold)
         timeout_duration = 2
-        astar_path, _ = run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
+        astar_path= run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
         
         #print(astar_path)
 
@@ -255,9 +256,28 @@ class AStarPathPlanner(Node):
         else:
             self.get_logger().info(f"A star path: path not found!")
             self.get_logger().info(f"Returning goal pose as a path!")
-            path = self.astarpath_to_rospath(grid)
-            self.path_pub.publish(path)
-            self.publish_astar_result(False)
+
+
+            # At the beginning of the launch, current pose is not updated yet.
+            if not self.curr_pose:
+                path = self.astarpath_to_rospath(grid)
+                self.path_pub.publish(path)
+                self.publish_astar_result(True)
+                return
+            
+                    
+            dx = self.goal.pose.position.x - self.curr_pose.x
+            dy = self.goal.pose.position.y - self.curr_pose.y
+            goal_distance = math.sqrt(dx**2 + dy**2) # Euclidean distance between the robot's position and the goal position
+
+            # Did not find a path but the goal pos is close enough.
+            if goal_distance < 3.0:
+                path = self.astarpath_to_rospath(grid)
+                self.path_pub.publish(path)
+                self.publish_astar_result(True)
+
+            else:
+                self.publish_astar_result(False)
 
     def publish_astar_result(self, result: bool):
         result_msg = String()
