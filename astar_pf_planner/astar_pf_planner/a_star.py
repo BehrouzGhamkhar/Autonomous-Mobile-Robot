@@ -11,7 +11,7 @@ import tf_transformations
 from std_msgs.msg import String
 import math
 from nav_msgs.msg import Odometry
-
+import signal
 from nav_msgs.msg import OccupancyGrid
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
@@ -41,9 +41,11 @@ class AStarPathPlanner(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, qos_profile)
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
         self.path_pub = self.create_publisher(Path, "/path", 10)
-        # self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
-        self.amcl_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
-
+        #self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
+        # self.amcl_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
+        self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
+        self.astar_result_pub = self.create_publisher(String, "/astar_result", 10)
+        self.goal = None
         self.goal_pose = goal
         self.goal_orientation = None
         self.goal_threshold = goal_threshold
@@ -82,6 +84,7 @@ class AStarPathPlanner(Node):
     def goal_callback(self, data):
 
         pose_stamp = data.pose.position
+        self.goal = data
         self.goal_orientation = data.pose.orientation
         self.goal_pose = self.rescale_pose_to_mapsize(pose_stamp, self.occupancy_grid)
         self.get_logger().info(f'Goal_pose in grid:{self.goal_pose}')
@@ -93,7 +96,11 @@ class AStarPathPlanner(Node):
     #     self.curr_pose = msg.pose.pose.position
     #     self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
 
-    def amcl_pose_callback(self, msg):
+    #def amcl_pose_callback(self, msg):
+    #    self.curr_pose = msg.pose.pose.position
+    #    self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)'
+
+    def slam_pose_callback(self, msg):
         self.curr_pose = msg.pose.pose.position
         self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
 
@@ -108,9 +115,9 @@ class AStarPathPlanner(Node):
         return math.sqrt((current[0] - goal[0]) ** 2 + (current[1] - goal[1]) ** 2)
 
     def check_threshold(self, grid, new_position):
-        if new_position[0] + self.min_threshold > self.grid_width:
+        if new_position[0] + self.min_threshold >= self.grid_width:
             return False
-        if new_position[1] + self.min_threshold > self.grid_height:
+        if new_position[1] + self.min_threshold >= self.grid_height:
             return False
         if new_position[0] - self.min_threshold < 0:
             return False
@@ -170,12 +177,17 @@ class AStarPathPlanner(Node):
 
         return [], len(explored_set)
 
-    def astarpath_to_rospath(self, astar_path, grid):
+    def astarpath_to_rospath(self, grid, astar_path = None):
 
         path = Path()
         path.header = Header()
         path.header.stamp = self.get_clock().now().to_msg()
         path.header.frame_id = "map"
+
+        if not astar_path:
+            path.poses.append(self.goal)
+            print("path is: ", [x.pose.position for x in path.poses])
+            return path
 
         for i, point in enumerate(astar_path):
             pose = PoseStamped()
@@ -199,7 +211,7 @@ class AStarPathPlanner(Node):
                 pose.pose.orientation.y = quaternion[1]
                 pose.pose.orientation.z = quaternion[2]
                 pose.pose.orientation.w = quaternion[3]
-                # TODO: ????
+
             else:  # For the last point, use the default orientation
                 pose.pose.orientation.z = self.goal_orientation.z
                 pose.pose.orientation.w = self.goal_orientation.w
@@ -221,23 +233,56 @@ class AStarPathPlanner(Node):
     def plan(self, grid):
         if not self.check_valid_position(grid, self.goal_pose):
             self.get_logger().info(f"Goal Pose is not valid!")
+            self.publish_astar_result(False)
             return False
 
-        astar_path, _ = self.astar(grid, self.start_pose, self.goal_pose, self.min_threshold)
-        print(astar_path)
+
+        #astar_path, _ = self.astar(grid, self.start_pose, self.goal_pose, self.min_threshold)
+        timeout_duration = 2
+        astar_path, _ = run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
+        
+        #print(astar_path)
 
         if astar_path:
             self.astar_path = astar_path[2::5] if len(astar_path) > 2 else astar_path[::5]
             self.astar_path.append(astar_path[-1])
-            path = self.astarpath_to_rospath(self.astar_path, grid)
+            path = self.astarpath_to_rospath(grid, self.astar_path)
             self.path_pub.publish(path)
-
+            self.publish_astar_result(True)
             # visualize_path(grid, astar_path, self.output_image_path)
             self.get_logger().info(f"A star path: {self.astar_path}")
 
         else:
             self.get_logger().info(f"A star path: path not found!")
+            self.get_logger().info(f"Returning goal pose as a path!")
+            path = self.astarpath_to_rospath(grid)
+            self.path_pub.publish(path)
+            self.publish_astar_result(False)
 
+    def publish_astar_result(self, result: bool):
+        result_msg = String()
+        result_msg.data = str(result)
+        self.astar_result_pub.publish(result_msg)
+
+
+def timeout_handler(signum, frame):
+    raise Exception("Timed out!")
+
+
+def run_with_timeout(timeout, func, *args, **kwargs):
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout)
+
+    try:
+        result = func(*args, **kwargs)
+    except Exception:
+        print(f"{func.__name__} execution exceeded {timeout} seconds!")
+        result = None 
+    finally:
+        # Cancel the alarm
+        signal.alarm(0)
+    
+    return result
 
 def main(args=None):
     grid_pivot = [0, 0, 0]
