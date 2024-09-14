@@ -30,7 +30,7 @@ class PathFollowingNode(Node):
 
         # Max velocities
         self.MAX_LINEAR_VELOCITY = 0.3  # Maximum linear velocity
-        self.MAX_ANGULAR_VELOCITY = 0.7  # Maximum angular velocity
+        self.MAX_ANGULAR_VELOCITY = 0.5  # Maximum angular velocity
 
         self.waypoints = []  # List to store waypoints
         self.current_waypoint_index = 0  # Index of the current waypoint
@@ -167,7 +167,7 @@ class PathFollowingNode(Node):
          #   msg.linear.x = 0.0
           #  msg.angular.z = np.clip(force[1], -self.MAX_ANGULAR_VELOCITY, self.MAX_ANGULAR_VELOCITY)
         else:
-            msg.linear.x = np.clip(force_magnitude, -self.MAX_LINEAR_VELOCITY, self.MAX_LINEAR_VELOCITY) #min(distance_to_goal, self.MAX_LINEAR_VELOCITY)
+            msg.linear.x = np.clip((force[0] + force[1]), 0.0, self.MAX_LINEAR_VELOCITY) #min(distance_to_goal, self.MAX_LINEAR_VELOCITY)
             msg.angular.z = np.clip(np.arctan2(force[1], force[0]), -self.MAX_ANGULAR_VELOCITY,
                                     self.MAX_ANGULAR_VELOCITY)
 
