@@ -9,6 +9,7 @@ import math
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import Odometry
+from std_msgs import String
 
 class FrontierGoalGenerator(Node):
     def __init__(self):
@@ -28,6 +29,8 @@ class FrontierGoalGenerator(Node):
             PoseStamped, 'goal_pose', 10
         )
         
+        self.astar_result_sub = self.create_subscription(String, "astar_result", self.astar_result_callback, 10)
+
         self.map_data = None # Stores the most recent map data received from the /map topic
         self.robot_pose = None # Robot's current position and orientation received from the /odom topic
         self.current_goal = None # Current goal pose that the robot is moving towards
@@ -51,6 +54,16 @@ class FrontierGoalGenerator(Node):
         if self.current_goal and self.is_goal_reached():
             self.get_logger().info('Goal reached. Ready to generate a new goal...')
             self.goal_active = False # Resets the goal flag to generate a new goal
+
+
+    def astar_result_callback(self, result):
+        
+        astar_result = result.data
+
+        if astar_result == "False":
+            self.goal_active = False
+            self.generate_frontier_goal()
+            
 
     def generate_frontier_goal(self):
         if self.map_data is None:
