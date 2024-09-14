@@ -44,6 +44,7 @@ class ParticleFilter(Node):
         )
 
         self.pub_hypotheses = self.create_publisher(PoseArray, "/hypotheses", 10)
+        self.pub_estimated_pose = self.create_publisher(PoseStamped, "/estimated_pose", 10)
         self.curr_pose_sub = self.create_subscription(Odometry, "/odom", self.odomCallback, 10)
         self.laser_scan_sub = self.create_subscription(LaserScan, "/scan", self.scanCallback, 10)
         self.init_pose_sub = self.create_subscription(PoseWithCovarianceStamped, "/initialpose", self.initposeCallback, 10)
@@ -55,8 +56,8 @@ class ParticleFilter(Node):
 
     def initposeCallback(self,msg):
 
+        self.particles.clear()
         self.init_pose_received=True
-
 
         self.last_used_pose= msg.pose.pose
         self.last_pose= msg.pose.pose
@@ -73,14 +74,14 @@ class ParticleFilter(Node):
             weight=1/self.no_of_init_hypotheses #Assigning uniform weight at start       
 
             self.particles.append((x,y,yaw,weight))
-            #print(f"{i}th point is {x, y, yaw, weight}")
         
         self.publish_particles(self.particles)
+        self.publish_estimated_pose(self.particles)
 
     def publish_particles(self,particles):
         hypothese=PoseArray()
-        hypothese.header.frame_id='odom'
-        for i,data in enumerate(particles):
+        hypothese.header.frame_id='map'
+        for data in particles:
             point=Pose()
 
             point.position.x=data[0]
@@ -96,6 +97,36 @@ class ParticleFilter(Node):
             hypothese.poses.append(point)
         
         self.pub_hypotheses.publish(hypothese)
+
+    def publish_estimated_pose(self,particles):
+        estimated_pose=PoseStamped()
+        x=0
+        y=0
+        yaw=0
+
+
+        estimated_pose.header.frame_id='map'
+        for data in particles:
+            x+=data[0]
+            y+=data[1]
+            yaw+=data[2]
+
+        x=x/len(particles)
+        y=y/len(particles)
+        yaw=yaw/len(particles)
+
+        estimated_pose.pose.position.x=x
+        estimated_pose.pose.position.y=y
+        estimated_pose.pose.position.z=0.0
+
+        rx,ry,rz,w=tf_transformations.quaternion_from_euler(0.0,0.0,yaw)
+        estimated_pose.pose.orientation.x=rx
+        estimated_pose.pose.orientation.y=ry
+        estimated_pose.pose.orientation.z=rz
+        estimated_pose.pose.orientation.w=w
+       
+        self.pub_estimated_pose.publish(estimated_pose)
+    
 
     def odomCallback(self,msg):
         if self.receive_new_scan_pose==True:
@@ -113,18 +144,6 @@ class ParticleFilter(Node):
         self.map_data = msg.data
         self.map_origin=[msg.info.origin.position.x, msg.info.origin.position.y]
 
-        '''
-        self.occupancy_grid = np.array([[0 for _ in range(self.map_height)] for _ in range(self.map_width)])
-
-        for i in range(self.map_height):
-            for j in range(self.map_width):
-                self.occupancy_grid[j][i] = self.map_data[i * self.map_width + j]
-
-        self.occupancy_grid = np.rot90(self.occupancy_grid, 2)
-
-        self.occupancy_origin = [msg.info.origin.position.x, msg.info.origin.position.y, msg.info.origin.position.z]
-        self.map_scale = 1 / round(self.map_resolution, 4)
-        '''
 
     def scanCallback(self,msg):
         if self.receive_new_scan_pose==True:
@@ -141,7 +160,6 @@ class ParticleFilter(Node):
         #print(f"d_trans:{dtrans}")
         drot1=np.arctan2(dy,dx)-theta
         drot2=theta_final-theta-drot1
-
 
         #With Gaussian Noise
         t_d1 = drot1 + np.random.normal(0, 0.01)
@@ -174,22 +192,12 @@ class ParticleFilter(Node):
                 m_array.append([msg.ranges[index], pose[2]+angle_min + index * angle_increment])
         np_array = np.array(m_array)
 
-        #print(np_array)
-
         #converting polar to cartesian
-        """
-        np_polar: 2-dimenisional numpy array, where each row consists of the distance to the obstacle and the
-                corresponding angle in radians. Thus, number of rows will be equal to the number of scan data points
-        Return:
-        np_cart: 2-dimenisional numpy array, where each row consists of X and Y coordinates in Cartesian system
-        """
         np_cart = []
 
         for i, (radius, angle) in enumerate(np_array):
             coordinates = [radius * math.cos(angle), radius * math.sin(angle)]
             np_cart.append(coordinates)
-
-        #print(np_array)
 
         return np_cart
     
@@ -197,8 +205,8 @@ class ParticleFilter(Node):
         grid_pts=[]
 
         for pts in xy_pts:
-            i = np.round((-self.map_origin[0]+pts[0])/self.map_resolution)
-            j = np.round((-self.map_origin[1]+pts[1])/self.map_resolution)
+            i = np.round((pts[0]-self.map_origin[0])/self.map_resolution)
+            j = np.round((pts[1]-self.map_origin[1])/self.map_resolution)
             grid_pts.append([i,j])
 
         return grid_pts
@@ -217,8 +225,7 @@ class ParticleFilter(Node):
 
     def closest_object_dist(self, x, y):
         dist = sys.float_info.max
-        #self._object_list=self.find_objects()
-        for object in self._object_list:
+        for object in self.object_list:
             current_dist = np.sqrt(((object[0] - x) ** 2) + ((object[1] - y) ** 2))+np.random.normal(0, 0.01)#Adding gaussian noise for sensor measurement
             if current_dist < dist:
                 dist = current_dist
@@ -235,8 +242,6 @@ class ParticleFilter(Node):
             U=r+j*1/len(particles)
             while U>cum_sum:
                 i=i+1
-                #if(i>=len(particles)):
-                #    return resampled_particles
                 cum_sum=cum_sum+particles[i][3]
 
             resampled_particles.append(particles[i])
@@ -246,13 +251,12 @@ class ParticleFilter(Node):
     def cal_rel_position_of_laser_pts(self,scan_msg,curr_pose):
         ref_indices=[]
         laser_pts_in_xy=[]
-        self._object_list=self.find_objects()
+        self.object_list=self.find_objects()
         ref_indices=self.calculate_reference_index(len(scan_msg.ranges))
-        #print(f"Length of scanned elements: {selected_scan_elements}")
 
         laser_pts_in_xy=self.to_xy(scan_msg, curr_pose,ref_indices)
         laser_pts_in_grid_pts=self.to_grid_pt(laser_pts_in_xy)
-        #print(laser_pts_in_grid_pts)
+
         dist=[]
         for grid_pt in laser_pts_in_grid_pts:
             dist.append(self.closest_object_dist(grid_pt[0],grid_pt[1]))
@@ -264,7 +268,6 @@ class ParticleFilter(Node):
         for i in range(len(ref_rel_pos)):
             weight=weight+abs(ref_rel_pos[i]-curr_particle_rel_pos[i])
 
-        
         return weight
     
     def normalize_particles(self,particles):
@@ -288,42 +291,46 @@ class ParticleFilter(Node):
         
 
         return normalized_particles
+    
+    def resample_around_top3(self, resampled_particles):
+
+        sorted_tuples = sorted(resampled_particles, key=lambda x: x[3], reverse=True)
+
+        # Extract unique tuples based on the weight value
+        unique_top_particles = []
+        seen_third_values = set()
+
+        for t in sorted_tuples:
+            third_value = t[2]
+            if third_value not in seen_third_values:
+                unique_top_particles.append(t)
+                seen_third_values.add(third_value)
+            if len(unique_top_particles) == 3:  # Stop once we have the top 3 unique elements
+                break
+
+        print(f"top3_particles:{unique_top_particles}")
+        self.particles.clear()
+        for particle in unique_top_particles:
+            for j in range(3):
+                self.particles.append([np.random.normal(particle[0], 0.01), np.random.normal(particle[1], 0.01), np.random.normal(particle[2], 0.01), 1/(len(unique_top_particles))])
         
     def timerCallback(self):
-        #if self.last_used_pose and self.last_pose:
+
         if self.init_pose_received==False:
             return
         
-
         self.receive_new_scan_pose=True
         
         distance_from_last_pose=np.sqrt(np.square(self.last_used_pose.position.x-self.last_pose.position.x)+np.square(self.last_used_pose.position.y-self.last_pose.position.y))
-        #print(distance_from_last_pose)
         theta_last_used_pose=tf_transformations.euler_from_quaternion([self.last_used_pose.orientation.x, self.last_used_pose.orientation.y, self.last_used_pose.orientation.z, self.last_used_pose.orientation.w])[2]
         theta_last_pose=tf_transformations.euler_from_quaternion([self.last_pose.orientation.x,self.last_pose.orientation.y,self.last_pose.orientation.z,self.last_pose.orientation.w])[2]
         rotation_from_last_pose=theta_last_used_pose-theta_last_pose
         current_pose=[self.last_pose.position.x, self.last_pose.position.y, theta_last_pose]
-        #print(f"Rotation_from_last_pose: {rotation_from_last_pose}")
+
         new_particles=[]
         relative_position_data_for_particles=[]
-        particle_weight=[]
-        max = 0.5
-        w = []
-        c = []
-        for i in range(len(self.particles)):
-            #print(i)
-            w.append(random.uniform(0, max))
-            if i == 0:
-                c.append(w[i])
-            else :
-                c.append(c[i-1]+w[i])
-            max = (1-c[i])/2
-        w.append(1-c[len(self.particles)-2])
-
-        
         
         if distance_from_last_pose<self.dist_thresh and abs(rotation_from_last_pose)<self.theta_thresh:
-            #print("Movement is not enough")
             return
         else:
             self._object_list=self.find_objects()
@@ -331,14 +338,8 @@ class ParticleFilter(Node):
             print(f"Relative_position:{ref_relative_position}")
 
             for i, particle in enumerate(self.particles):
-                #print("Movement is enough")
-                #current_particle_pose=particle
-                #print(f"Current_pose: {current_particle_pose}")
 
                 predicted_pose=self.prediction_step(particle,self.last_pose,self.last_used_pose)
-                #print(f"Predicted_pose: {predicted_pose}")
-                #prob=self.measurement_update(self.last_scan, self.last_pose)
-                #print(f"Prob:{prob}")
 
                 rel_position_for_each_particle=self.cal_rel_position_of_laser_pts(self.last_scan,predicted_pose)
                 relative_position_data_for_particles.append(rel_position_for_each_particle)
@@ -348,23 +349,21 @@ class ParticleFilter(Node):
                 
                 new_particles.append([predicted_pose[0], predicted_pose[1], predicted_pose[2], 1/weight])
 
-                
-                #self.measurement_update()
-            self.particles.clear()
-            print(f"New_particle:{new_particles}")
-            #print(f"Length:{len(relative_position_data_for_particles)}")
-            #print(f"Particle_weight:{len(particle_weight)}")
-            normalized_particles = self.normalize_particles(new_particles)
-            print(f"normalized_particles:{normalized_particles}")
-            '''
             
-            if normalized_particles is None:
-                print("No normalized particles")
-            '''
-            self.particles=self.resample(normalized_particles)
-            print(f"Number of particles:{len(self.particles)}")
+            self.particles.clear()
+            #print(f"New_particle:{new_particles}")
 
+            normalized_particles = self.normalize_particles(new_particles)
+            #print(f"normalized_particles:{normalized_particles}")
+         
+            self.particles=self.resample(normalized_particles)
+            print(f"resampled_particles:{(self.particles)}")
+            
             self.publish_particles(self.particles)
+            self.publish_estimated_pose(self.particles)
+
+            self.resample_around_top3(self.particles)
+
             self.last_used_pose=self.last_pose
             self.receive_new_scan_pose=False
 
