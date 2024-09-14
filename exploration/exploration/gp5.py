@@ -6,10 +6,10 @@ import rclpy
 from rclpy.node import Node
 import random
 import math
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import Odometry
-from std_msgs import String
+from std_msgs.msg import String
 
 class FrontierGoalGenerator(Node):
     def __init__(self):
@@ -20,9 +20,7 @@ class FrontierGoalGenerator(Node):
             OccupancyGrid, 'map', self.map_callback, 10
         )
         
-        self.odom_subscriber = self.create_subscription(
-            Odometry, 'odom', self.odom_callback, 10
-        )
+        # self.odom_subscriber = self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
 
         # Publisher for goal poses on the consistent topic "/goal_pose"
         self.goal_publisher = self.create_publisher(
@@ -30,21 +28,18 @@ class FrontierGoalGenerator(Node):
         )
         
         self.astar_result_sub = self.create_subscription(String, "astar_result", self.astar_result_callback, 10)
+        self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
 
         self.map_data = None # Stores the most recent map data received from the /map topic
         self.robot_pose = None # Robot's current position and orientation received from the /odom topic
         self.current_goal = None # Current goal pose that the robot is moving towards
-        self.goal_tolerance = 0.5  # Distance tolerance in meters
+        self.goal_tolerance = 1.0  # Distance tolerance in meters
         self.goal_active = False # Flag indicating if an active goal is being pursued
 
     # Called whenever a new OccupancyGrid message is received
     def map_callback(self, msg):
         self.map_data = msg
         self.get_logger().info('Map received.')
-
-    # Called whenever a new Odometry message is received
-    def odom_callback(self, msg):
-        self.robot_pose = msg.pose.pose
         
         # Generate a goal if there isn't an active one
         if not self.goal_active:
@@ -54,6 +49,22 @@ class FrontierGoalGenerator(Node):
         if self.current_goal and self.is_goal_reached():
             self.get_logger().info('Goal reached. Ready to generate a new goal...')
             self.goal_active = False # Resets the goal flag to generate a new goal
+
+    # Called whenever a new Odometry message is received
+    # def odom_callback(self, msg):
+    #     self.robot_pose = msg.pose.pose
+        
+    #     # Generate a goal if there isn't an active one
+    #     if not self.goal_active:
+    #         self.generate_frontier_goal()
+
+    #     # Check if the robot has reached the goal
+    #     if self.current_goal and self.is_goal_reached():
+    #         self.get_logger().info('Goal reached. Ready to generate a new goal...')
+    #         self.goal_active = False # Resets the goal flag to generate a new goal
+
+    def slam_pose_callback(self, msg):
+        self.robot_pose = msg.pose.pose
 
 
     def astar_result_callback(self, result):
@@ -70,9 +81,9 @@ class FrontierGoalGenerator(Node):
             self.get_logger().warn('Map not received yet. Cannot generate goal.')
             return
 
-        if self.robot_pose is None:
-            self.get_logger().warn('Robot pose not received yet. Cannot generate goal.')
-            return
+        # if self.robot_pose is None:
+        #     self.get_logger().warn('Robot pose not received yet. Cannot generate goal.')
+        #     return
 
         # Extract map info
         map_width = self.map_data.info.width
@@ -87,8 +98,10 @@ class FrontierGoalGenerator(Node):
         # Find frontier cells
         frontier_cells = self.find_frontier_cells(map_2d, map_width, map_height)
 
-        if not frontier_cells:
-            self.get_logger().warn('No frontier cells found. Cannot generate goal.')
+        if len(frontier_cells) < 50:
+            self.get_logger().warn('No frontier cells found. Finishing Exploration!!  YAY!!.')
+            self.get_logger().error('You have served your duty Soldier. You may Leave now')
+            rclpy.shutdown()
             return
 
         # Randomly select a frontier cell
