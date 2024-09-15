@@ -13,7 +13,6 @@ class PathFollowingNode(Node):
     def __init__(self):
         super().__init__('path_following_node')
         self.scan_subscriber = self.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
-        #self.odom_subscriber = self.create_subscription(Odometry, 'odom', self.pose_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
 
         self.path_subscriber = self.create_subscription(Path, 'path', self.path_callback, 10)
@@ -54,25 +53,8 @@ class PathFollowingNode(Node):
         euler = tf_transformations.euler_from_quaternion(quaternion)
         self.current_pose['theta'] = euler[2]  # Yaw
 
-    # def pose_callback(self, msg):
-    #     self.current_pose['x'] = msg.pose.pose.position.x
-    #     self.current_pose['y'] = msg.pose.pose.position.y
-    #     orientation = msg.pose.pose.orientation
-    #     quaternion = (
-    #         orientation.x,
-    #         orientation.y,
-    #         orientation.z,
-    #         orientation.w
-    #     )
-    #     euler = tf_transformations.euler_from_quaternion(quaternion)
-    #     self.current_pose['theta'] = euler[2]  # Yaw
 
     def scan_callback(self, msg):
-        # self.min_range = 5.0
-        # for i, range in enumerate(msg.ranges):
-        #     if range < self.min_range:
-        #         self.min_range = range
-        #     self.get_logger().warn(f' Min Range is: {self.min_range}')
         
         if self.current_pose is None or not self.waypoints:
             return  # Wait until we have the current pose and waypoints
@@ -114,15 +96,13 @@ class PathFollowingNode(Node):
         msg.linear.x = 0.0
         msg.angular.z = np.clip(angle_to_goal, -self.MAX_ANGULAR_VELOCITY, self.MAX_ANGULAR_VELOCITY)
         self.publish_cmd_vel(msg)
-        #self.cmd_publisher.publish(msg)
 
     def calculate_repulsive_forces(self, scan):
         forces = np.zeros(2)
         for i, range in enumerate(scan.ranges):
             if np.isinf(range) or range >= scan.range_max or range > self.min_obs_dist or range < scan.range_min or np.isnan(range):  # Only consider obstacles within 1m
-                # if np.isnan(range):
-                #     self.get_logger().warn(f'Range is NAN: {range}')
                 continue  # Skip if the range is infinite, beyond the maximum range, or beyond 1m
+
             angle = scan.angle_min + i * scan.angle_increment
             force_direction = np.array([np.cos(angle), np.sin(angle)])
             force_magnitude = self.k_rep * (1.0 / range - 1.0 / scan.range_max) / (range ** 2)
@@ -134,13 +114,6 @@ class PathFollowingNode(Node):
         direction_to_goal = waypoint_base_link
         distance_to_goal = np.linalg.norm(direction_to_goal)
 
-        # if distance_to_goal < self.goal_threshold:
-        #     # Check if we reached the waypoint
-        #     # self.get_logger().info(f'Reached waypoint {self.current_waypoint_index} / {len(self.waypoints)}')
-        #     # self.current_waypoint_index += 1  # Move to the next waypoint
-        #     return np.array([0.0, 0.0])  # No attractive force when at the waypoint
-        #else:
-            # Normal attractive force
         force_magnitude = self.k_att * distance_to_goal
         force_direction = direction_to_goal / (distance_to_goal + 1e-6)  # Avoid division by zero
         return force_magnitude * force_direction
@@ -163,16 +136,13 @@ class PathFollowingNode(Node):
             self.get_logger().info(f'Reached waypoint {self.current_waypoint_index} / {len(self.waypoints)}')
             self.current_waypoint_index += 1  # Move to the next waypoint
 
-        #elif force_magnitude < 0.1:  # When close to goal, just rotate to desired orientation
-         #   msg.linear.x = 0.0
-          #  msg.angular.z = np.clip(force[1], -self.MAX_ANGULAR_VELOCITY, self.MAX_ANGULAR_VELOCITY)
         else:
             msg.linear.x = np.clip((force[0] + force[1]), 0.0, self.MAX_LINEAR_VELOCITY) #min(distance_to_goal, self.MAX_LINEAR_VELOCITY)
             msg.angular.z = np.clip(np.arctan2(force[1], force[0]), -self.MAX_ANGULAR_VELOCITY,
                                     self.MAX_ANGULAR_VELOCITY)
 
         self.publish_cmd_vel(msg)
-        #self.cmd_publisher.publish(msg)/home/behrouz/ros2_ws/src/amr_project/amr_project/timeout_module.py
+
 
     def publish_cmd_vel(self, msg):
        
