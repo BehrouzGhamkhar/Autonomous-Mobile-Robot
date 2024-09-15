@@ -16,17 +16,14 @@ class FrontierGoalGenerator(Node):
         super().__init__('frontier_goal_generator')
 
         # Subscribers for map and odometry
-        self.map_subscriber = self.create_subscription(
-            OccupancyGrid, 'map', self.map_callback, 10
-        )
+        self.map_subscriber = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
         
         # self.odom_subscriber = self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
 
         # Publisher for goal poses on the consistent topic "/goal_pose"
-        self.goal_publisher = self.create_publisher(
-            PoseStamped, 'goal_pose', 10
-        )
+        self.goal_publisher = self.create_publisher(PoseStamped, 'goal_pose', 10)
         
+        # Creating subscription for valid or invalid goal pose from A_star
         self.astar_result_sub = self.create_subscription(String, "astar_result", self.astar_result_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
 
@@ -145,7 +142,7 @@ class FrontierGoalGenerator(Node):
 
     def get_neighbors(self, x, y):
         """
-        Get the 8-connected neighbors for a given cell.
+        Get the 8-connected neighbors for a given cell
         """
         return [
             (x - 1, y - 1), (x, y - 1), (x + 1, y - 1),
