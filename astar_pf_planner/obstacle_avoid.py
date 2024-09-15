@@ -36,7 +36,7 @@ class PathFollowingNode(Node):
         self.current_waypoint_index = 0  # Index of the current waypoint
         self.current_pose = {'x': 0.0, 'y': 0.0, 'theta': 0.0}  # Placeholder for the current pose
         self.last_position = None  # Store the robot's last known position
-        self.stuck_time_threshold = 2.0  # Time in seconds before we consider the robot stuck
+        self.stuck_time_threshold = 20.0  # Time in seconds before we consider the robot stuck
         self.last_movement_time = 0  # Timestamp of when the robot last moved
 
 
@@ -181,7 +181,7 @@ class PathFollowingNode(Node):
 
     def handle_getting_stuck(self):
         self.last_movement_time = time.time()
-        self.publish_progres_result()
+        self.publish_progres_result(False)
         
 
     def publish_progres_result(self, result: bool):
