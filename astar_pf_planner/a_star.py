@@ -43,7 +43,7 @@ class AStarPathPlanner(Node):
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
         self.path_pub = self.create_publisher(Path, "/path", 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
-        self.astar_result_pub = self.create_publisher(String, "/astar_result", 10)
+        self.astar_result_pub = self.create_publisher(String, "/progress_result", 10)
 
         self.curr_pose = None
         self.goal = None
@@ -108,25 +108,24 @@ class AStarPathPlanner(Node):
         return math.sqrt((current[0] - goal[0]) ** 2 + (current[1] - goal[1]) ** 2)
 
     def check_threshold(self, grid, new_position):
-        try:
-            if new_position[0] + self.min_threshold >= self.grid_width:
-                return False
-            if new_position[1] + self.min_threshold >= self.grid_height:
-                return False
-            if new_position[0] - self.min_threshold < 0:
-                return False
-            if new_position[1] - self.min_threshold < 0:
-                return False
 
-            for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
-                for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
-
-                    if grid[new_position[0] + i][new_position[1] + j]  > 0:
-                        return False
-
-            return True
-        except:
+        if new_position[0] + self.min_threshold >= self.grid_width:
             return False
+        if new_position[1] + self.min_threshold >= self.grid_height:
+            return False
+        if new_position[0] - self.min_threshold < 0:
+            return False
+        if new_position[1] - self.min_threshold < 0:
+            return False
+
+        for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
+            for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
+
+                if grid[new_position[0] + i][new_position[1] + j]  > 0:
+                    return False
+
+        return True
+  
 
     def get_possible_moves(self, grid, current: Tuple, min_threshold: int = 0) -> List[Tuple]:
         possible_moves = []

@@ -6,6 +6,7 @@ from nav_msgs.msg import Odometry, Path
 import numpy as np
 import tf2_ros
 import tf_transformations
+from std_msgs.msg import String
 from tf2_geometry_msgs import PointStamped
 import time
 
@@ -14,7 +15,7 @@ class PathFollowingNode(Node):
         super().__init__('path_following_node')
         self.scan_subscriber = self.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
-
+        self.progress_result_pub = self.create_publisher(String, "/progress_result", 10)
         self.path_subscriber = self.create_subscription(Path, 'path', self.path_callback, 10)
         self.cmd_publisher = self.create_publisher(Twist, 'cmd_vel', 10)
         self.tf_buffer = tf2_ros.Buffer()
@@ -109,6 +110,7 @@ class PathFollowingNode(Node):
             # Check if the robot has been stuck for more than the threshold
             if distance_moved < 0.02 and time_since_last_move > self.stuck_time_threshold:  # 0.05 is a small threshold
                 self.get_logger().warn(f'Robot is stuck! Not moved for {time_since_last_move:.2f} seconds.')
+                self.handle_getting_stuck()
             else:
                 # Reset the last movement time if the robot has moved
                 if distance_moved >= 0.05:
@@ -176,6 +178,16 @@ class PathFollowingNode(Node):
         self.get_logger().info(f'Moving with linear x: {msg.linear.x} angular z: {msg.angular.z}')
         self.cmd_publisher.publish(msg)
 
+
+    def handle_getting_stuck(self):
+        self.last_movement_time = time.time()
+        self.publish_progres_result()
+        
+
+    def publish_progres_result(self, result: bool):
+        result_msg = String()
+        result_msg.data = str(result)
+        self.progress_result_pub.publish(result_msg)
 
 def main(args=None):
     rclpy.init(args=args)

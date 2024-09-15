@@ -22,7 +22,7 @@ class FrontierGoalGenerator(Node):
         self.goal_publisher = self.create_publisher(PoseStamped, 'goal_pose', 10)
         
         # Creating subscription for valid or invalid goal pose from A_star
-        self.astar_result_sub = self.create_subscription(String, "astar_result", self.astar_result_callback, 10)
+        self.astar_result_sub = self.create_subscription(String, "progress_result", self.astar_result_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
 
         self.map_data = None # Stores the most recent map data received from the /map topic
