@@ -8,7 +8,7 @@ import random
 import math
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry 
 from std_msgs.msg import String
 
 class FrontierGoalGenerator(Node):
@@ -17,14 +17,12 @@ class FrontierGoalGenerator(Node):
 
         # Subscribers for map and odometry
         self.map_subscriber = self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
-        
-        # self.odom_subscriber = self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
 
         # Publisher for goal poses on the consistent topic "/goal_pose"
         self.goal_publisher = self.create_publisher(PoseStamped, 'goal_pose', 10)
         
         # Creating subscription for valid or invalid goal pose from A_star
-        self.astar_result_sub = self.create_subscription(String, "astar_result", self.astar_result_callback, 10)
+        self.astar_result_sub = self.create_subscription(String, "progress_result", self.astar_result_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
 
         self.map_data = None # Stores the most recent map data received from the /map topic
@@ -47,18 +45,6 @@ class FrontierGoalGenerator(Node):
             self.get_logger().info('Goal reached. Ready to generate a new goal...')
             self.goal_active = False # Resets the goal flag to generate a new goal
 
-    # Called whenever a new Odometry message is received
-    # def odom_callback(self, msg):
-    #     self.robot_pose = msg.pose.pose
-        
-    #     # Generate a goal if there isn't an active one
-    #     if not self.goal_active:
-    #         self.generate_frontier_goal()
-
-    #     # Check if the robot has reached the goal
-    #     if self.current_goal and self.is_goal_reached():
-    #         self.get_logger().info('Goal reached. Ready to generate a new goal...')
-    #         self.goal_active = False # Resets the goal flag to generate a new goal
 
     def slam_pose_callback(self, msg):
         self.robot_pose = msg.pose.pose
@@ -77,10 +63,6 @@ class FrontierGoalGenerator(Node):
         if self.map_data is None:
             self.get_logger().warn('Map not received yet. Cannot generate goal.')
             return
-
-        # if self.robot_pose is None:
-        #     self.get_logger().warn('Robot pose not received yet. Cannot generate goal.')
-        #     return
 
         # Extract map info
         map_width = self.map_data.info.width

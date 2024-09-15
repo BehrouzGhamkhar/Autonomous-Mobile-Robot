@@ -28,7 +28,7 @@ class AStarNode:
 
 
 class AStarPathPlanner(Node):
-    def __init__(self, node_name: str, start, goal, goal_threshold, min_threshold, grid_pivot):
+    def __init__(self, node_name: str, start, goal, grid_pivot):
         super().__init__(node_name)
 
         qos_profile = QoSProfile(
@@ -41,17 +41,21 @@ class AStarPathPlanner(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, qos_profile)
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
         self.path_pub = self.create_publisher(Path, "/path", 10)
-        #self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
-        # self.amcl_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
-        self.astar_result_pub = self.create_publisher(String, "/astar_result", 10)
+        self.astar_result_pub = self.create_publisher(String, "/progress_result", 10)
+
+        #goal
         self.curr_pose = None
         self.goal = None
         self.goal_pose = goal
         self.goal_orientation = None
-        self.goal_threshold = goal_threshold
-        self.min_threshold = min_threshold
+        self.goal_threshold = 2
+
+        # min threshold distance to obstacles
+        self.min_threshold = 7
         self.astar_path = []
+
+        # occupancy_grid
         self.map_scale = 20
         self.occupancy_origin = grid_pivot
         self.occupancy_grid = []
@@ -93,13 +97,6 @@ class AStarPathPlanner(Node):
 
         self.plan(self.occupancy_grid)
 
-    # def odom_callback(self, msg):
-    #     self.curr_pose = msg.pose.pose.position
-    #     self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
-
-    #def amcl_pose_callback(self, msg):
-    #    self.curr_pose = msg.pose.pose.position
-    #    self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)'
 
     def slam_pose_callback(self, msg):
         self.curr_pose = msg.pose.pose.position
@@ -110,8 +107,6 @@ class AStarPathPlanner(Node):
                 math.floor(self.grid_height - ((pose.y - self.occupancy_origin[1]) * self.map_scale)))
 
     def heuristic(self, current, goal):
-        # manhattan distance
-        #return abs(current[0] - goal[0]) + abs(current[1] - goal[1])
         # euclidian
         return math.sqrt((current[0] - goal[0]) ** 2 + (current[1] - goal[1]) ** 2)
 
@@ -128,7 +123,7 @@ class AStarPathPlanner(Node):
         for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
             for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
 
-                if grid[new_position[0] + i][new_position[1] + j] > 0:
+                if grid[new_position[0] + i][new_position[1] + j] != 0:
                     return False
 
         return True
@@ -237,12 +232,8 @@ class AStarPathPlanner(Node):
             self.publish_astar_result(False)
             return False
 
-
-        #astar_path, _ = self.astar(grid, self.start_pose, self.goal_pose, self.min_threshold)
         timeout_duration = 2
         astar_path= run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
-        
-        #print(astar_path)
 
         if astar_path:
             self.astar_path = astar_path[2::5] if len(astar_path) > 2 else astar_path[::5]
@@ -257,21 +248,19 @@ class AStarPathPlanner(Node):
             self.get_logger().info(f"A star path: path not found!")
             self.get_logger().info(f"Returning goal pose as a path!")
 
-
             # At the beginning of the launch, current pose is not updated yet.
             if not self.curr_pose:
                 path = self.astarpath_to_rospath(grid)
                 self.path_pub.publish(path)
                 self.publish_astar_result(True)
                 return
-            
                     
             dx = self.goal.pose.position.x - self.curr_pose.x
             dy = self.goal.pose.position.y - self.curr_pose.y
             goal_distance = math.sqrt(dx**2 + dy**2) # Euclidean distance between the robot's position and the goal position
 
             # Did not find a path but the goal pos is close enough.
-            if goal_distance < 3.0:
+            if goal_distance < 3.0 and self.check_valid_position():
                 path = self.astarpath_to_rospath(grid)
                 self.path_pub.publish(path)
                 self.publish_astar_result(True)
@@ -308,10 +297,8 @@ def main(args=None):
     grid_pivot = [0, 0, 0]
     start = (0, 0)
     goal = (100, 100)
-    goal_threshold = 2
-    min_threshold = 7
     rclpy.init(args=args)
-    sub = AStarPathPlanner("path_planner", start, goal, goal_threshold, min_threshold, grid_pivot)
+    sub = AStarPathPlanner("path_planner", start, goal, grid_pivot)
     rclpy.spin(sub)
     rclpy.shutdown()
 
