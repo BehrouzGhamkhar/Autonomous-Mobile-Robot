@@ -23,24 +23,6 @@ from tf2_ros import TransformBroadcaster
 class ParticleFilter(Node):
     def __init__(self,node_name: str):
         super().__init__(node_name)
-        self.no_of_init_hypotheses=10
-        self.dist_thresh=0.3#Minimum movement required to update particles
-        self.theta_thresh=0.4#Minimum rotation required to update particles
-
-        self.particles=[]
-
-        self.last_used_pose: Pose = None
-        self.last_pose: Pose = None
-        self.last_scan: LaserScan = None
-        self.receive_new_scan_pose=False
-        self.init_pose_received=False
-
-
-        qos_profile = QoSProfile(
-        reliability=ReliabilityPolicy.RELIABLE,
-        durability=DurabilityPolicy.TRANSIENT_LOCAL,
-        depth=10
-        )
 
         self.pub_hypotheses = self.create_publisher(PoseArray, "/hypotheses", 10)
         self.pub_estimated_pose = self.create_publisher(PoseStamped, "/estimated_pose", 10)
@@ -50,8 +32,28 @@ class ParticleFilter(Node):
         self.laser_scan_sub = self.create_subscription(LaserScan, "/scan", self.scanCallback, 10)
         self.init_pose_sub = self.create_subscription(PoseWithCovarianceStamped, "/initialpose", self.initposeCallback, 10)
         self.map_sub = self.create_subscription(OccupancyGrid, "/map", self.mapCallback, qos_profile)
+
+
+        self.no_of_init_hypotheses=10
+        self.dist_thresh=0.3    # Minimum movement required to update particles
+        self.theta_thresh=0.4   # Minimum rotation required to update particles
+
+        self.particles=[]
+
+        self.last_used_pose: Pose = None
+        self.last_pose: Pose = None
+        self.last_scan: LaserScan = None
+        self.receive_new_scan_pose = False
+        self.init_pose_received = False
+
+        qos_profile = QoSProfile(
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        depth=10
+        )
         
         self.timer_block=self.create_timer(0.1,self.timerCallback)
+
 
     def initposeCallback(self,msg):
 
@@ -77,6 +79,7 @@ class ParticleFilter(Node):
         self.publish_particles(self.particles)
         self.publish_estimated_pose(self.particles)
 
+
     def publish_particles(self,particles):
         #This function publishes /hypotheses topic 
         hypothese=PoseArray()
@@ -88,7 +91,7 @@ class ParticleFilter(Node):
             point.position.y=data[1]
             point.position.z=0.0
 
-            x,y,z,w=tf_transformations.quaternion_from_euler(0.0,0.0,data[2])
+            x,y,z,w=tf_transformations.quaternion_from_euler(0.0, 0.0, data[2])
             point.orientation.x=x
             point.orientation.y=y
             point.orientation.z=z
@@ -97,6 +100,7 @@ class ParticleFilter(Node):
             hypothese.poses.append(point)
         
         self.pub_hypotheses.publish(hypothese)
+
 
     def publish_estimated_pose(self,particles):
         #This function publishes /estimated_pose topic
@@ -149,6 +153,7 @@ class ParticleFilter(Node):
         if self.receive_new_scan_pose==True:
             self.last_scan=msg
 
+
     def prediction_step(self, current_pose,last_pose,last_used_pose):
         dx=last_pose.position.x-last_used_pose.position.x
         dy=last_pose.position.y-last_used_pose.position.y
@@ -170,6 +175,7 @@ class ParticleFilter(Node):
 
         return [x_new, y_new, theta_new]
     
+
     def calculate_reference_index(self, range_len):
         #This function calculates reference indexes for sensor measurement and stores them in selected_scan_indices
         #Here I am selecting first element, then every 10th index.
@@ -180,6 +186,7 @@ class ParticleFilter(Node):
 
         return selected_scan_indices
     
+
     def to_xy(self, msg, pose, ref_ind):
         #Extracting scan data and arranging it in an array as range, angle
         m_array = []
@@ -201,6 +208,7 @@ class ParticleFilter(Node):
 
         return np_cart
     
+
     def to_grid_pt(self,xy_pts):
         #Converting from x-y coo-rdinate to grid location
         grid_pts=[]
@@ -211,6 +219,7 @@ class ParticleFilter(Node):
             grid_pts.append([i,j])
 
         return grid_pts
+
 
     def find_objects(self):
         #Scanning the map data and finding indexes of occupied cells
@@ -234,6 +243,7 @@ class ParticleFilter(Node):
                 dist = current_dist
         return dist
 
+
     def resample(self,particles):
         #This function performs stochastic universal sampling algorithms to resample particles based on their importance weight
         #This algorithm is referred from S. Thrun, W. Burgard, and D. Fox, Probabilistic Robotics (Intelligent Robotics and Autonomous Agents). The MIT Press, 2005
@@ -253,6 +263,7 @@ class ParticleFilter(Node):
 
         return resampled_particles
     
+
     def cal_rel_position_of_laser_pts(self,scan_msg,curr_pose):
 
         ref_indices=[]
@@ -269,6 +280,7 @@ class ParticleFilter(Node):
         
         return dist
     
+
     def calc_particle_weight(self, ref_rel_pos,curr_particle_rel_pos):
         #This function calculates importance weight of the particle by taking sum of difference between reference scan and particle scan
         weight=0
@@ -277,6 +289,7 @@ class ParticleFilter(Node):
 
         return weight
     
+
     def normalize_particles(self,particles):
         # Normalising particle weights between 0-1
         sum_of_weights=0
@@ -295,6 +308,7 @@ class ParticleFilter(Node):
 
         return normalized_particles
     
+
     def resample_around_top3(self, resampled_particles):
 
         sorted_tuples = sorted(resampled_particles, key=lambda x: x[3], reverse=True)
@@ -316,6 +330,7 @@ class ParticleFilter(Node):
             for j in range(3):
                 self.particles.append([np.random.normal(particle[0], 0.01), np.random.normal(particle[1], 0.01), np.random.normal(particle[2], 0.01), 1/(len(unique_top_particles))])
         
+
     def timerCallback(self):
 
         if self.init_pose_received==False:
