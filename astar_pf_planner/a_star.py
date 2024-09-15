@@ -108,22 +108,25 @@ class AStarPathPlanner(Node):
         return math.sqrt((current[0] - goal[0]) ** 2 + (current[1] - goal[1]) ** 2)
 
     def check_threshold(self, grid, new_position):
-        if new_position[0] + self.min_threshold >= self.grid_width:
-            return False
-        if new_position[1] + self.min_threshold >= self.grid_height:
-            return False
-        if new_position[0] - self.min_threshold < 0:
-            return False
-        if new_position[1] - self.min_threshold < 0:
-            return False
+        try:
+            if new_position[0] + self.min_threshold >= self.grid_width:
+                return False
+            if new_position[1] + self.min_threshold >= self.grid_height:
+                return False
+            if new_position[0] - self.min_threshold < 0:
+                return False
+            if new_position[1] - self.min_threshold < 0:
+                return False
 
-        for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
-            for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
+            for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
+                for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
 
-                if grid[new_position[0] + i][new_position[1] + j]  > 0:
-                    return False
+                    if grid[new_position[0] + i][new_position[1] + j]  > 0:
+                        return False
 
-        return True
+            return True
+        except:
+            return False
 
     def get_possible_moves(self, grid, current: Tuple, min_threshold: int = 0) -> List[Tuple]:
         possible_moves = []
@@ -216,13 +219,16 @@ class AStarPathPlanner(Node):
     
 
     def check_valid_position(self, grid, pose):
-        if pose[0] >= self.grid_width or pose[1] >= self.grid_height:
+        try:
+            if pose[0] >= self.grid_width or pose[1] >= self.grid_height:
+                return False
+            if grid[pose[0]][pose[1]] != 0:
+                return False
+            if not self.check_threshold(grid, pose):
+                return False
+            return True
+        except:
             return False
-        if grid[pose[0]][pose[1]] != 0:
-            return False
-        if not self.check_threshold(grid, pose):
-            return False
-        return True
     
 
     def plan(self, grid):

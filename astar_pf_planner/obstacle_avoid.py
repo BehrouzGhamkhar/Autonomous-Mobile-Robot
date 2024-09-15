@@ -7,7 +7,7 @@ import numpy as np
 import tf2_ros
 import tf_transformations
 from tf2_geometry_msgs import PointStamped
-
+import time
 
 class PathFollowingNode(Node):
     def __init__(self):
@@ -34,6 +34,10 @@ class PathFollowingNode(Node):
         self.waypoints = []  # List to store waypoints
         self.current_waypoint_index = 0  # Index of the current waypoint
         self.current_pose = {'x': 0.0, 'y': 0.0, 'theta': 0.0}  # Placeholder for the current pose
+        self.last_position = None  # Store the robot's last known position
+        self.stuck_time_threshold = 2.0  # Time in seconds before we consider the robot stuck
+        self.last_movement_time = 0  # Timestamp of when the robot last moved
+
 
     def path_callback(self, msg):
         self.waypoints = [pose.pose for pose in msg.poses]
@@ -79,6 +83,9 @@ class PathFollowingNode(Node):
             # Calculate angle to waypoint
             angle_to_waypoint = np.arctan2(waypoint_base_link[1], waypoint_base_link[0])
 
+            # Check if the robot is stuck
+            self.check_robile_stuck()
+
             # If the waypoint is more than 90 degrees away from the front of the robot, rotate first
             if abs(angle_to_waypoint) > np.pi / 4:
                 self.rotate_towards_goal(angle_to_waypoint)
@@ -90,6 +97,26 @@ class PathFollowingNode(Node):
                 self.get_logger().info(
                     f'Attractive force: {attractive_force}, Repulsive force: {obstacle_forces}, Total force: {total_force}')
                 self.move_robot(total_force, waypoint_base_link)
+
+    def check_robile_stuck(self):
+
+        current_position = np.array([self.current_pose['x'] , self.current_pose['y'] ])
+
+        if self.last_position is not None:
+            distance_moved = np.linalg.norm(current_position - self.last_position)
+            time_since_last_move = time.time() - self.last_movement_time
+
+            # Check if the robot has been stuck for more than the threshold
+            if distance_moved < 0.02 and time_since_last_move > self.stuck_time_threshold:  # 0.05 is a small threshold
+                self.get_logger().warn(f'Robot is stuck! Not moved for {time_since_last_move:.2f} seconds.')
+            else:
+                # Reset the last movement time if the robot has moved
+                if distance_moved >= 0.05:
+                    self.last_movement_time = time.time()
+
+        # Update the last known position
+        self.last_position = current_position
+
 
     def rotate_towards_goal(self, angle_to_goal):
         msg = Twist()
