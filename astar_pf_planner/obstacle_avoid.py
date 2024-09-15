@@ -108,7 +108,7 @@ class PathFollowingNode(Node):
             time_since_last_move = time.time() - self.last_movement_time
 
             # Check if the robot has been stuck for more than the threshold
-            if distance_moved < 0.02 and time_since_last_move > self.stuck_time_threshold:  # 0.05 is a small threshold
+            if distance_moved < 0.05 and time_since_last_move > self.stuck_time_threshold:  # 0.05 is a small threshold
                 self.get_logger().warn(f'Robot is stuck! Not moved for {time_since_last_move:.2f} seconds.')
                 self.handle_getting_stuck()
             else:

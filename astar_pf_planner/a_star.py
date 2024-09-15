@@ -11,10 +11,9 @@ import tf_transformations
 from std_msgs.msg import String
 import math
 from nav_msgs.msg import Odometry
-
+import signal
 from nav_msgs.msg import OccupancyGrid
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-from modules.timeout_module import *
 
 
 class AStarNode:
@@ -44,16 +43,15 @@ class AStarPathPlanner(Node):
         self.path_pub = self.create_publisher(Path, "/path", 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
         self.astar_result_pub = self.create_publisher(String, "/progress_result", 10)
-
         self.curr_pose = None
         self.goal = None
         self.goal_pose = goal
         self.goal_orientation = None
         self.goal_threshold = goal_threshold
         self.min_threshold = min_threshold
+        self.astar_path = []
         self.map_scale = 20
         self.occupancy_origin = grid_pivot
-        self.astar_path = []
         self.occupancy_grid = []
         self.grid_width = 0
         self.grid_height = 0
@@ -77,7 +75,6 @@ class AStarPathPlanner(Node):
 
         self.occupancy_origin = [msg.info.origin.position.x, msg.info.origin.position.y, msg.info.origin.position.z]
         self.map_scale = 1 / round(msg.info.resolution, 4)
-
         # Log some information for debugging
         self.get_logger().info(f'Map size: {self.grid_width}x{self.grid_height}')
         self.get_logger().info(f'Origin: {self.occupancy_origin}')
@@ -104,11 +101,10 @@ class AStarPathPlanner(Node):
                 math.floor(self.grid_height - ((pose.y - self.occupancy_origin[1]) * self.map_scale)))
 
     def heuristic(self, current, goal):
-        # Euclidian distance
+        # euclidian
         return math.sqrt((current[0] - goal[0]) ** 2 + (current[1] - goal[1]) ** 2)
 
     def check_threshold(self, grid, new_position):
-
         if new_position[0] + self.min_threshold >= self.grid_width:
             return False
         if new_position[1] + self.min_threshold >= self.grid_height:
@@ -121,15 +117,15 @@ class AStarPathPlanner(Node):
         for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
             for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
 
-                if grid[new_position[0] + i][new_position[1] + j]  > 0:
+                if grid[new_position[0] + i][new_position[1] + j] != 0:
                     return False
 
         return True
-  
 
     def get_possible_moves(self, grid, current: Tuple, min_threshold: int = 0) -> List[Tuple]:
         possible_moves = []
         neighbors = [(i, j) for i in range(-2, 4, 2) for j in range(-2, 4, 2)]
+
 
         for neighbor in neighbors:
             new_position = (current[0] + neighbor[0], current[1] + neighbor[1])
@@ -170,7 +166,6 @@ class AStarPathPlanner(Node):
                     heappush(fringe, new_node)
 
         return []
-
 
     def astarpath_to_rospath(self, grid, astar_path = None):
 
@@ -215,20 +210,15 @@ class AStarPathPlanner(Node):
 
         print("path is: ", [x.pose.position for x in path.poses])
         return path
-    
 
     def check_valid_position(self, grid, pose):
-        try:
-            if pose[0] >= self.grid_width or pose[1] >= self.grid_height:
-                return False
-            if grid[pose[0]][pose[1]] != 0:
-                return False
-            if not self.check_threshold(grid, pose):
-                return False
-            return True
-        except:
+        if pose[0] >= self.grid_width or pose[1] >= self.grid_height:
             return False
-    
+        if grid[pose[0]][pose[1]] != 0:
+            return False
+        if not self.check_threshold(grid, pose):
+            return False
+        return True
 
     def plan(self, grid):
         if not self.check_valid_position(grid, self.goal_pose):
@@ -237,15 +227,15 @@ class AStarPathPlanner(Node):
             return False
 
         timeout_duration = 2
-        astar_path = run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
-        
+        astar_path= run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
+
         if astar_path:
             self.astar_path = astar_path[2::5] if len(astar_path) > 2 else astar_path[::5]
             self.astar_path.append(astar_path[-1])
             path = self.astarpath_to_rospath(grid, self.astar_path)
             self.path_pub.publish(path)
             self.publish_astar_result(True)
-
+            # visualize_path(grid, astar_path, self.output_image_path)
             self.get_logger().info(f"A star path: {self.astar_path}")
 
         else:
@@ -264,7 +254,7 @@ class AStarPathPlanner(Node):
             goal_distance = math.sqrt(dx**2 + dy**2) # Euclidean distance between the robot's position and the goal position
 
             # Did not find a path but the goal pos is close enough.
-            if goal_distance < 3.0:
+            if goal_distance < 3.0 and self.check_valid_position():
                 path = self.astarpath_to_rospath(grid)
                 self.path_pub.publish(path)
                 self.publish_astar_result(True)
@@ -272,13 +262,30 @@ class AStarPathPlanner(Node):
             else:
                 self.publish_astar_result(False)
 
-
     def publish_astar_result(self, result: bool):
         result_msg = String()
         result_msg.data = str(result)
         self.astar_result_pub.publish(result_msg)
 
 
+def timeout_handler(signum, frame):
+    raise Exception("Timed out!")
+
+
+def run_with_timeout(timeout, func, *args, **kwargs):
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout)
+
+    try:
+        result = func(*args, **kwargs)
+    except Exception:
+        print(f"{func.__name__} execution exceeded {timeout} seconds!")
+        result = None 
+    finally:
+        # Cancel the alarm
+        signal.alarm(0)
+    
+    return result
 
 def main(args=None):
     grid_pivot = [0, 0, 0]
