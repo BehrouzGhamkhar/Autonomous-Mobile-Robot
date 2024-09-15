@@ -128,7 +128,7 @@ class AStarPathPlanner(Node):
         for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
             for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
 
-                if grid[new_position[0] + i][new_position[1] + j] > 0:
+                if grid[new_position[0] + i][new_position[1] + j] != 0:
                     return False
 
         return True
@@ -271,7 +271,7 @@ class AStarPathPlanner(Node):
             goal_distance = math.sqrt(dx**2 + dy**2) # Euclidean distance between the robot's position and the goal position
 
             # Did not find a path but the goal pos is close enough.
-            if goal_distance < 3.0:
+            if goal_distance < 3.0 and self.check_valid_position():
                 path = self.astarpath_to_rospath(grid)
                 self.path_pub.publish(path)
                 self.publish_astar_result(True)
