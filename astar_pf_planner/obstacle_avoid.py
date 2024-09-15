@@ -172,7 +172,7 @@ class PathFollowingNode(Node):
                                     self.MAX_ANGULAR_VELOCITY)
 
         self.publish_cmd_vel(msg)
-        #self.cmd_publisher.publish(msg)
+        #self.cmd_publisher.publish(msg)/home/behrouz/ros2_ws/src/amr_project/amr_project/timeout_module.py
 
     def publish_cmd_vel(self, msg):
        

@@ -11,9 +11,10 @@ import tf_transformations
 from std_msgs.msg import String
 import math
 from nav_msgs.msg import Odometry
-import signal
+
 from nav_msgs.msg import OccupancyGrid
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from modules.timeout_module import *
 
 
 class AStarNode:
@@ -128,7 +129,7 @@ class AStarPathPlanner(Node):
         for i in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
             for j in range(-self.min_threshold, self.min_threshold + 1, self.min_threshold):
 
-                if grid[new_position[0] + i][new_position[1] + j] != 0:
+                if grid[new_position[0] + i][new_position[1] + j]  > 0:
                     return False
 
         return True
@@ -240,7 +241,7 @@ class AStarPathPlanner(Node):
 
         #astar_path, _ = self.astar(grid, self.start_pose, self.goal_pose, self.min_threshold)
         timeout_duration = 2
-        astar_path= run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
+        astar_path = run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
         
         #print(astar_path)
 
@@ -271,7 +272,7 @@ class AStarPathPlanner(Node):
             goal_distance = math.sqrt(dx**2 + dy**2) # Euclidean distance between the robot's position and the goal position
 
             # Did not find a path but the goal pos is close enough.
-            if goal_distance < 3.0 and self.check_valid_position():
+            if goal_distance < 3.0:
                 path = self.astarpath_to_rospath(grid)
                 self.path_pub.publish(path)
                 self.publish_astar_result(True)
@@ -285,24 +286,6 @@ class AStarPathPlanner(Node):
         self.astar_result_pub.publish(result_msg)
 
 
-def timeout_handler(signum, frame):
-    raise Exception("Timed out!")
-
-
-def run_with_timeout(timeout, func, *args, **kwargs):
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout)
-
-    try:
-        result = func(*args, **kwargs)
-    except Exception:
-        print(f"{func.__name__} execution exceeded {timeout} seconds!")
-        result = None 
-    finally:
-        # Cancel the alarm
-        signal.alarm(0)
-    
-    return result
 
 def main(args=None):
     grid_pivot = [0, 0, 0]
