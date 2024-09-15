@@ -16,19 +16,16 @@ import math
 from numpy import pi
 import sys
 from scipy.stats import norm
-
+import tf2_ros
 from tf2_ros import TransformBroadcaster
 
 
 class ParticleFilter(Node):
     def __init__(self,node_name: str):
         super().__init__(node_name)
-        #self.map_width=7.5
-        #self.map_height=6.5
-        #self.map_resolution=0.05
         self.no_of_init_hypotheses=10
         self.dist_thresh=0.3#Minimum movement required to update particles
-        self.theta_thresh=0.4
+        self.theta_thresh=0.4#Minimum rotation required to update particles
 
         self.particles=[]
 
@@ -56,8 +53,6 @@ class ParticleFilter(Node):
         
         self.timer_block=self.create_timer(0.1,self.timerCallback)
 
-        #self.generate_hypotheses()
-
     def initposeCallback(self,msg):
 
         self.particles.clear()
@@ -83,6 +78,7 @@ class ParticleFilter(Node):
         self.publish_estimated_pose(self.particles)
 
     def publish_particles(self,particles):
+        #This function publishes /hypotheses topic 
         hypothese=PoseArray()
         hypothese.header.frame_id='map'
         for data in particles:
@@ -103,11 +99,11 @@ class ParticleFilter(Node):
         self.pub_hypotheses.publish(hypothese)
 
     def publish_estimated_pose(self,particles):
+        #This function publishes /estimated_pose topic
         estimated_pose=PoseStamped()
         x=0
         y=0
         yaw=0
-
 
         estimated_pose.header.frame_id='map'
         for data in particles:
@@ -131,35 +127,7 @@ class ParticleFilter(Node):
        
         self.pub_estimated_pose.publish(estimated_pose)
 
-
-    def publish_transform(self,est_pose):
-        t = TransformStamped()
-
-        # Read message content and assign it to
-        # corresponding tf variables
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'map'
-        t.child_frame_id = 'base_link'
-
-        # Turtle only exists in 2D, thus we get x and y translation
-        # coordinates from the message and set the z coordinate to 0
-        t.transform.translation.x = est_pose.pose.position.x
-        t.transform.translation.y = est_pose.pose.position.y
-        t.transform.translation.z = 0.0
-
-        # For the same reason, turtle can only rotate around one axis
-        # and this why we set rotation in x and y to 0 and obtain
-        # rotation in z axis from the message
-        t.transform.rotation.x = est_pose.pose.orientation.x
-        t.transform.rotation.y = est_pose.pose.orientation.y
-        t.transform.rotation.z = est_pose.pose.orientation.z
-        t.transform.rotation.w = est_pose.pose.orientation.w
-
-        # Send the transformation
-        self.tf_broadcaster.sendTransform(t)
-
     
-
     def odomCallback(self,msg):
         if self.receive_new_scan_pose==True:
             self.last_pose=msg.pose.pose
@@ -184,20 +152,17 @@ class ParticleFilter(Node):
     def prediction_step(self, current_pose,last_pose,last_used_pose):
         dx=last_pose.position.x-last_used_pose.position.x
         dy=last_pose.position.y-last_used_pose.position.y
-        #print(dx,dy)
         theta=tf_transformations.euler_from_quaternion([last_used_pose.orientation.x, last_used_pose.orientation.y, last_used_pose.orientation.z, last_used_pose.orientation.w])[2]
         theta_final=tf_transformations.euler_from_quaternion([last_pose.orientation.x,last_pose.orientation.y,last_pose.orientation.z,last_pose.orientation.w])[2]
 
         dtrans=np.sqrt(dx*dx+dy*dy)
-        #print(f"d_trans:{dtrans}")
         drot1=np.arctan2(dy,dx)-theta
         drot2=theta_final-theta-drot1
 
-        #With Gaussian Noise
+        #Addding Gaussian Noise in yaw and 
         t_d1 = drot1 + np.random.normal(0, 0.01)
         t_dt = dtrans + np.random.normal(0, 0.01)
         t_d2 = drot2 + np.random.normal(0, 0.1)
-        #print(f"Received data in function: {t_d1,t_dt,t_d2}")
 
         x_new=current_pose[0] + t_dt*math.cos(current_pose[2]+t_d1)
         y_new=current_pose[1] + t_dt*math.sin(current_pose[2]+t_d1)
@@ -206,6 +171,8 @@ class ParticleFilter(Node):
         return [x_new, y_new, theta_new]
     
     def calculate_reference_index(self, range_len):
+        #This function calculates reference indexes for sensor measurement and stores them in selected_scan_indices
+        #Here I am selecting first element, then every 10th index.
         selected_scan_indices=[]
         selected_scan_indices.append(0) #Appending first index
         for i in range(9,range_len,10):
@@ -214,6 +181,7 @@ class ParticleFilter(Node):
         return selected_scan_indices
     
     def to_xy(self, msg, pose, ref_ind):
+        #Extracting scan data and arranging it in an array as range, angle
         m_array = []
         angle_increment = msg.angle_increment
         angle_min = msg.angle_min
@@ -224,7 +192,7 @@ class ParticleFilter(Node):
                 m_array.append([msg.ranges[index], pose[2]+angle_min + index * angle_increment])
         np_array = np.array(m_array)
 
-        #converting polar to cartesian
+        #Converting polar to cartesian
         np_cart = []
 
         for i, (radius, angle) in enumerate(np_array):
@@ -234,6 +202,7 @@ class ParticleFilter(Node):
         return np_cart
     
     def to_grid_pt(self,xy_pts):
+        #Converting from x-y coo-rdinate to grid location
         grid_pts=[]
 
         for pts in xy_pts:
@@ -244,26 +213,30 @@ class ParticleFilter(Node):
         return grid_pts
 
     def find_objects(self):
+        #Scanning the map data and finding indexes of occupied cells
         object_index_list = []
         for x in range(self.map_width):
             for y in range(self.map_height):
                 index = y * self.map_width + x
                 if index >= len(self.map_data) or index < -len(self.map_data):
                     continue
-                if self.map_data[index] >= 70:
+                if self.map_data[index] >= 50:
                     object_index_list.append((x, y, index))
         return object_index_list
 
 
     def closest_object_dist(self, x, y):
+        #This function finds nearest object to a grid pt x,y
         dist = sys.float_info.max
         for object in self.object_list:
-            current_dist = np.sqrt(((object[0] - x) ** 2) + ((object[1] - y) ** 2))+np.random.normal(0, 0.01)#Adding gaussian noise for sensor measurement
+            current_dist = np.sqrt(((object[0] - x) ** 2) + ((object[1] - y) ** 2))+np.random.normal(0, 0.01)#Adding gaussian noise in sensor measurement
             if current_dist < dist:
                 dist = current_dist
         return dist
 
     def resample(self,particles):
+        #This function performs stochastic universal sampling algorithms to resample particles based on their importance weight
+        #This algorithm is referred from S. Thrun, W. Burgard, and D. Fox, Probabilistic Robotics (Intelligent Robotics and Autonomous Agents). The MIT Press, 2005
         resampled_particles=[]
         
         cum_sum=particles[0][3]
@@ -281,6 +254,7 @@ class ParticleFilter(Node):
         return resampled_particles
     
     def cal_rel_position_of_laser_pts(self,scan_msg,curr_pose):
+
         ref_indices=[]
         laser_pts_in_xy=[]
         self.object_list=self.find_objects()
@@ -296,6 +270,7 @@ class ParticleFilter(Node):
         return dist
     
     def calc_particle_weight(self, ref_rel_pos,curr_particle_rel_pos):
+        #This function calculates importance weight of the particle by taking sum of difference between reference scan and particle scan
         weight=0
         for i in range(len(ref_rel_pos)):
             weight=weight+abs(ref_rel_pos[i]-curr_particle_rel_pos[i])
@@ -303,13 +278,12 @@ class ParticleFilter(Node):
         return weight
     
     def normalize_particles(self,particles):
+        # Normalising particle weights between 0-1
         sum_of_weights=0
         normalized_weights=[]
         normalized_particles=[]
         for particle in particles:
             sum_of_weights=sum_of_weights+particle[3]
-
-        print(f"Particle sum:{sum_of_weights}")
 
         for i,particle in enumerate(particles):
             norm_wt=(particle[3]/sum_of_weights)
@@ -318,9 +292,6 @@ class ParticleFilter(Node):
         norm_wt_sum=0
         for i,particle in enumerate(normalized_particles):
             norm_wt_sum=norm_wt_sum+particle[3]
-
-        print(f"Norm_wt_sum:{norm_wt_sum}")
-        
 
         return normalized_particles
     
@@ -340,7 +311,6 @@ class ParticleFilter(Node):
             if len(unique_top_particles) == 3:  # Stop once we have the top 3 unique elements
                 break
 
-        print(f"top3_particles:{unique_top_particles}")
         self.particles.clear()
         for particle in unique_top_particles:
             for j in range(3):
@@ -361,39 +331,37 @@ class ParticleFilter(Node):
 
         new_particles=[]
         relative_position_data_for_particles=[]
-        
+        #This condition checks whether robot has moved/rotated more than dist_thresh and theta_thresh
         if distance_from_last_pose<self.dist_thresh and abs(rotation_from_last_pose)<self.theta_thresh:
             return
         else:
             self._object_list=self.find_objects()
-            ref_relative_position=self.cal_rel_position_of_laser_pts(self.last_scan,current_pose)
-            print(f"Relative_position:{ref_relative_position}")
+            
+            ref_relative_position=self.cal_rel_position_of_laser_pts(self.last_scan,current_pose)#Calculating how far measured laser points are from surrounding obstacles/occupied cells
 
             for i, particle in enumerate(self.particles):
 
                 predicted_pose=self.prediction_step(particle,self.last_pose,self.last_used_pose)
-
-                rel_position_for_each_particle=self.cal_rel_position_of_laser_pts(self.last_scan,predicted_pose)
+                
+                rel_position_for_each_particle=self.cal_rel_position_of_laser_pts(self.last_scan,predicted_pose)#Calculating how far measured laser points are from surrounding obstacles/occupied cells
                 relative_position_data_for_particles.append(rel_position_for_each_particle)
                 weight=self.calc_particle_weight(ref_relative_position,rel_position_for_each_particle)
-                if (weight<0.0001):
-                    weight=0.001
                 
+                if (weight<0.0001):#this condition prevents shooting of 1/weight value
+                    weight=0.001
+
+                #Here 1/weight is appended because particle whose scan doesn't match well with reference scan will have higher weight but it should have lower importance weight
                 new_particles.append([predicted_pose[0], predicted_pose[1], predicted_pose[2], 1/weight])
 
             
             self.particles.clear()
-            #print(f"New_particle:{new_particles}")
-
+            #Normalizing importance weights of the particles
             normalized_particles = self.normalize_particles(new_particles)
-            #print(f"normalized_particles:{normalized_particles}")
          
             self.particles=self.resample(normalized_particles)
-            print(f"resampled_particles:{(self.particles)}")
             
             self.publish_particles(self.particles)
-            estimated_pose=self.publish_estimated_pose(self.particles)
-            self.publish_transform(estimated_pose)
+            self.publish_estimated_pose(self.particles)
 
             self.resample_around_top3(self.particles)
 
