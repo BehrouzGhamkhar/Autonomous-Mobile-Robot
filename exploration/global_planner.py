@@ -45,6 +45,7 @@ class FrontierGoalGenerator(Node):
             self.get_logger().info('Goal reached. Ready to generate a new goal...')
             self.goal_active = False # Resets the goal flag to generate a new goal
 
+
     def slam_pose_callback(self, msg):
         self.robot_pose = msg.pose.pose
 

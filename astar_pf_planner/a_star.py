@@ -28,7 +28,7 @@ class AStarNode:
 
 
 class AStarPathPlanner(Node):
-    def __init__(self, node_name: str, start, goal, goal_threshold, min_threshold, grid_pivot):
+    def __init__(self, node_name: str, start, goal, grid_pivot):
         super().__init__(node_name)
 
         qos_profile = QoSProfile(
@@ -43,13 +43,19 @@ class AStarPathPlanner(Node):
         self.path_pub = self.create_publisher(Path, "/path", 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
         self.astar_result_pub = self.create_publisher(String, "/progress_result", 10)
+
+        #goal
         self.curr_pose = None
         self.goal = None
         self.goal_pose = goal
         self.goal_orientation = None
-        self.goal_threshold = goal_threshold
-        self.min_threshold = min_threshold
+        self.goal_threshold = 2
+
+        # min threshold distance to obstacles
+        self.min_threshold = 7
         self.astar_path = []
+
+        # occupancy_grid
         self.map_scale = 20
         self.occupancy_origin = grid_pivot
         self.occupancy_grid = []
@@ -291,10 +297,8 @@ def main(args=None):
     grid_pivot = [0, 0, 0]
     start = (0, 0)
     goal = (100, 100)
-    goal_threshold = 2
-    min_threshold = 7
     rclpy.init(args=args)
-    sub = AStarPathPlanner("path_planner", start, goal, goal_threshold, min_threshold, grid_pivot)
+    sub = AStarPathPlanner("path_planner", start, goal, grid_pivot)
     rclpy.spin(sub)
     rclpy.shutdown()
 
