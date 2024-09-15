@@ -42,19 +42,18 @@ class AStarPathPlanner(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, qos_profile)
         self.goal_pose_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_callback, 10)
         self.path_pub = self.create_publisher(Path, "/path", 10)
-        #self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
-        # self.amcl_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
         self.slam_pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, 'pose', self.slam_pose_callback, 10)
         self.astar_result_pub = self.create_publisher(String, "/astar_result", 10)
+
         self.curr_pose = None
         self.goal = None
         self.goal_pose = goal
         self.goal_orientation = None
         self.goal_threshold = goal_threshold
         self.min_threshold = min_threshold
-        self.astar_path = []
         self.map_scale = 20
         self.occupancy_origin = grid_pivot
+        self.astar_path = []
         self.occupancy_grid = []
         self.grid_width = 0
         self.grid_height = 0
@@ -78,6 +77,7 @@ class AStarPathPlanner(Node):
 
         self.occupancy_origin = [msg.info.origin.position.x, msg.info.origin.position.y, msg.info.origin.position.z]
         self.map_scale = 1 / round(msg.info.resolution, 4)
+
         # Log some information for debugging
         self.get_logger().info(f'Map size: {self.grid_width}x{self.grid_height}')
         self.get_logger().info(f'Origin: {self.occupancy_origin}')
@@ -94,13 +94,6 @@ class AStarPathPlanner(Node):
 
         self.plan(self.occupancy_grid)
 
-    # def odom_callback(self, msg):
-    #     self.curr_pose = msg.pose.pose.position
-    #     self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)
-
-    #def amcl_pose_callback(self, msg):
-    #    self.curr_pose = msg.pose.pose.position
-    #    self.start_pose = self.rescale_pose_to_mapsize(self.curr_pose, self.occupancy_grid)'
 
     def slam_pose_callback(self, msg):
         self.curr_pose = msg.pose.pose.position
@@ -111,9 +104,7 @@ class AStarPathPlanner(Node):
                 math.floor(self.grid_height - ((pose.y - self.occupancy_origin[1]) * self.map_scale)))
 
     def heuristic(self, current, goal):
-        # manhattan distance
-        #return abs(current[0] - goal[0]) + abs(current[1] - goal[1])
-        # euclidian
+        # Euclidian distance
         return math.sqrt((current[0] - goal[0]) ** 2 + (current[1] - goal[1]) ** 2)
 
     def check_threshold(self, grid, new_position):
@@ -137,7 +128,6 @@ class AStarPathPlanner(Node):
     def get_possible_moves(self, grid, current: Tuple, min_threshold: int = 0) -> List[Tuple]:
         possible_moves = []
         neighbors = [(i, j) for i in range(-2, 4, 2) for j in range(-2, 4, 2)]
-
 
         for neighbor in neighbors:
             new_position = (current[0] + neighbor[0], current[1] + neighbor[1])
@@ -178,6 +168,7 @@ class AStarPathPlanner(Node):
                     heappush(fringe, new_node)
 
         return []
+
 
     def astarpath_to_rospath(self, grid, astar_path = None):
 
@@ -222,6 +213,7 @@ class AStarPathPlanner(Node):
 
         print("path is: ", [x.pose.position for x in path.poses])
         return path
+    
 
     def check_valid_position(self, grid, pose):
         if pose[0] >= self.grid_width or pose[1] >= self.grid_height:
@@ -231,6 +223,7 @@ class AStarPathPlanner(Node):
         if not self.check_threshold(grid, pose):
             return False
         return True
+    
 
     def plan(self, grid):
         if not self.check_valid_position(grid, self.goal_pose):
@@ -238,26 +231,21 @@ class AStarPathPlanner(Node):
             self.publish_astar_result(False)
             return False
 
-
-        #astar_path, _ = self.astar(grid, self.start_pose, self.goal_pose, self.min_threshold)
         timeout_duration = 2
         astar_path = run_with_timeout(timeout_duration, self.astar, grid, self.start_pose, self.goal_pose, self.min_threshold)
         
-        #print(astar_path)
-
         if astar_path:
             self.astar_path = astar_path[2::5] if len(astar_path) > 2 else astar_path[::5]
             self.astar_path.append(astar_path[-1])
             path = self.astarpath_to_rospath(grid, self.astar_path)
             self.path_pub.publish(path)
             self.publish_astar_result(True)
-            # visualize_path(grid, astar_path, self.output_image_path)
+
             self.get_logger().info(f"A star path: {self.astar_path}")
 
         else:
             self.get_logger().info(f"A star path: path not found!")
             self.get_logger().info(f"Returning goal pose as a path!")
-
 
             # At the beginning of the launch, current pose is not updated yet.
             if not self.curr_pose:
@@ -265,7 +253,6 @@ class AStarPathPlanner(Node):
                 self.path_pub.publish(path)
                 self.publish_astar_result(True)
                 return
-            
                     
             dx = self.goal.pose.position.x - self.curr_pose.x
             dy = self.goal.pose.position.y - self.curr_pose.y
@@ -279,6 +266,7 @@ class AStarPathPlanner(Node):
 
             else:
                 self.publish_astar_result(False)
+
 
     def publish_astar_result(self, result: bool):
         result_msg = String()
