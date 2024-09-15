@@ -123,7 +123,7 @@ class PathFollowingNode(Node):
         force_magnitude = np.linalg.norm(force)
         distance_to_goal = np.linalg.norm(waypoint_base_link)
 
-        if len(self.waypoints) == (self.current_waypoint_index):
+        if (len(self.waypoints) - 1) == (self.current_waypoint_index):
             self.goal_threshold = 0.1
         else:
             self.goal_threshold = 0.5
